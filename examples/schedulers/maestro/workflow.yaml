@@ -1,0 +1,175 @@
+# Maestro (https://github.com/Netflix/maestro) workflow showing how
+# to run `agentctl` as a per-step task primitive.
+#
+# DSL notes (verified against the OSS Maestro repo + wiki, June 2026):
+#   - Maestro's step types are NoOp, Foreach, Subworkflow, and `kubernetes`.
+#     There is NO inline "shell" step type — containerized work runs as a
+#     `kubernetes` step that executes a container image. agent-controller
+#     already ships such an image
+#     (`ghcr.io/ccdevelopforfun/agent-runtime-base`, slice 4.2) with
+#     `agentctl` + both runtime adapters baked in, so the k8s step just
+#     runs that image.
+#   - A `kubernetes` step carries its container spec inside a
+#     `params.kubernetes` MAP whose value holds `image` (STRING),
+#     `command` (STRING_ARRAY), and `args` (STRING_ARRAY). See
+#     maestro-server/src/test/resources/samples/sample-kubernetes-wf.json
+#     in the OSS repo.
+#   - Steps are wrapped objects in the `steps` array (`- step:` …) and a
+#     dependency is expressed via `transition.successors`.
+#
+# Passing scheduler text safely: two expansion layers, not one
+# ------------------------------------------------------------
+# Using an `args` STRING_ARRAY removes the SHELL: the container runs with
+# an argv array (command + args), so there is no bash between Maestro and
+# agentctl, and a value like `$(rm -rf /)` or a backtick string is never
+# evaluated as a command. That is strictly safer than a shell step where
+# `${text}` would be spliced into a script body.
+#
+# BUT argv is NOT fully inert. kubelet performs its own `$(VAR)` expansion
+# on container `command`/`args` (and dependent expansion on env `value`s)
+# BEFORE exec, substituting any reference to a DEFINED pod env var. So if
+# this pod also carries `ANTHROPIC_API_KEY` in its env (as advised below),
+# an attacker-controlled `text` of `$(ANTHROPIC_API_KEY)` is rewritten to
+# the secret value before agentctl ever sees it — a secret-exfiltration
+# vector with no shell involved. (kubelet leaves references to UNDEFINED
+# vars untouched, and `$$(...)` escapes to a literal `$(...)`.)
+#
+# Treat any scheduler value placed in k8s args/env as subject to `$(VAR)`
+# expansion. If `text` can be user-controlled, do ONE of:
+#   - keep untrusted input OUT of args entirely — pass it as a mounted
+#     file consumed by agentctl via `--input text=@/path/to/text` (the
+#     file form planned for a later v0.7 slice), which no expansion layer
+#     touches; or
+#   - have the orchestrator escape `$`→`$$` and reject/validate the value
+#     before it reaches the step; and/or
+#   - don't co-locate secrets in the same pod env where untrusted args are
+#     expanded.
+# The inline `text=${text}` below is fine for trusted/static input (the
+# common scheduled-pipeline case) but is the line to revisit the moment
+# `text` becomes user-supplied. agentctl then performs its own
+# `${inputs.text}` interpolation into spec.task at task time.
+#
+# Unique result key
+# -----------------
+# `${workflow_instance_id}` is NOT globally unique in Maestro — it restarts
+# from 1 per workflow — so it must not key a shared path. We compute a
+# globally-unique value ONCE at the workflow level via a SEL expression
+# (`params.nextUniqueId()`) and reference it as `${run_key}` from every
+# step, so the writer and the reader agree on the same path. Computing
+# nextUniqueId() per-step would yield a DIFFERENT value in each step.
+#
+# Operator responsibilities (NOT shown in the OSS k8s-step sample, which
+# only documents image/command/args — wire these per your Maestro
+# k8s-step runtime version):
+#   - SHARED VOLUME: the classify step writes the result and the downstream
+#     step reads it; in a multi-node cluster the two pods may land on
+#     different nodes, so `${workspace}` must be backed by a shared volume
+#     (PVC / NFS / EFS) mounted into BOTH step containers at that path.
+#   - FILE OWNERSHIP: agentctl writes the result `0600` and its parent dir
+#     `0700` as the NON-ROOT uid baked into agent-runtime-base, so the
+#     reader can only read it if it runs as the SAME uid. Both steps below
+#     use agent-runtime-base for that reason. On root-squashed or
+#     non-root-enforced clusters, also set a shared `securityContext`
+#     (matching `runAsUser` + an `fsGroup` that owns the volume) on both
+#     step pods so the handoff file is actually readable.
+#   - SECRETS: the agent needs `ANTHROPIC_API_KEY` in the container
+#     environment, typically wired from a Kubernetes Secret.
+#   - SPEC AVAILABILITY: text-classifier.yaml must exist in the container
+#     at /opt/agents/text-classifier.yaml (mount a ConfigMap, or bake it
+#     into an image derived from agent-runtime-base).
+#   - IMAGE VERSION: the image must bundle agentctl >= v0.7.2 — the release
+#     that added `--input` / `--output-file` / `spec.outputSchema`. An
+#     older image rejects text-classifier.yaml at validation time because
+#     its embedded ADL schema pre-dates `outputSchema`. NOTE: runtime-image
+#     tags version INDEPENDENTLY of the agentctl CLI / ADL schema (the
+#     current published line is `:0.1.x`, NOT `:0.7.x`), so choose the tag
+#     by the agentctl version it bundles — do not assume the image tag
+#     mirrors the CLI version.
+workflow:
+  id: agentctl-text-classifier
+  name: agentctl text classifier
+  description: >-
+    Classify a text snippet's sentiment by running agentctl as a Maestro
+    kubernetes step, then read the typed JSON result in a downstream step.
+  params:
+    text:
+      value: "I absolutely love the new feature, it just works."
+      type: STRING
+    # The shared mount point present in every step pod (PVC / NFS / EFS).
+    # Replace with your real mount.
+    workspace:
+      value: "/mnt/maestro-shared/agentctl"
+      type: STRING
+    # Globally-unique per-run key, computed ONCE here and referenced as
+    # ${run_key} by both steps. nextUniqueId() returns a 64-bit number;
+    # Maestro stringifies it when interpolating into the path below.
+    run_key:
+      expression: "params.nextUniqueId();"
+      type: LONG
+  steps:
+    - step:
+        id: classify
+        type: kubernetes
+        transition:
+          successors:
+            branch_on_label: "true"
+        params:
+          kubernetes:
+            type: MAP
+            value:
+              image:
+                # PLACEHOLDER tag — replace with the published
+                # agent-runtime-base tag whose bundled agentctl is
+                # >= v0.7.2. The `<>` make this value an invalid (un-pullable)
+                # image reference on purpose, so an unedited copy fails loudly
+                # instead of silently pulling an image without the slice-7.2
+                # CLI surface. See the IMAGE VERSION note in the header.
+                value: "ghcr.io/ccdevelopforfun/agent-runtime-base:<tag-with-agentctl-0.7.2-or-newer>"
+                type: STRING
+              command:
+                value: ["agentctl"]
+                type: STRING_ARRAY
+              # No shell: each element is a literal argv entry (no bash
+              # command-substitution). NOTE kubelet still `$(VAR)`-expands
+              # these against the pod env before exec — see the header
+              # section on the two expansion layers; `text=${text}` is safe
+              # for trusted/static input but must be hardened if `text`
+              # becomes user-supplied. With spec.outputSchema set, the
+              # result file is GUARANTEED to be a JSON object matching
+              # {label, confidence} or this step exits non-zero and Maestro
+              # never reaches branch_on_label.
+              args:
+                value:
+                  - "run"
+                  - "--input"
+                  - "text=${text}"
+                  - "--output-file"
+                  - "${workspace}/${run_key}/classify-result.json"
+                  - "/opt/agents/text-classifier.yaml"
+                type: STRING_ARRAY
+    - step:
+        id: branch_on_label
+        type: kubernetes
+        transition: {}
+        params:
+          kubernetes:
+            type: MAP
+            value:
+              # Minimal reader: `cat` the shared-volume result the classify
+              # step wrote. Uses the SAME agent-runtime-base image (and thus
+              # the same non-root uid) as the writer, so it can read the
+              # `0600` result file — a `busybox`/root reader would be denied
+              # on non-root-enforced or root-squashed volumes (see FILE
+              # OWNERSHIP in the header). A real workflow would parse the
+              # JSON (jq, or `agentctl` itself) and branch on `.label` —
+              # e.g. route negative sentiment to an escalation step.
+              image:
+                value: "ghcr.io/ccdevelopforfun/agent-runtime-base:<tag-with-agentctl-0.7.2-or-newer>"
+                type: STRING
+              command:
+                value: ["cat"]
+                type: STRING_ARRAY
+              args:
+                value:
+                  - "${workspace}/${run_key}/classify-result.json"
+                type: STRING_ARRAY

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-controller.dev/schemas/manifest.v1.json",
+  "title": "Agent Controller Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "agent-controller.dev/v1alpha1" },
+    "kind":       { "enum": ["Tool", "Extension", "MCPServer", "Skill"] },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name":        { "type": "string", "pattern": "^[a-z0-9]([-_a-z0-9]*[a-z0-9])?$", "maxLength": 63 },
+        "version":     { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+" },
+        "owner":       { "type": "string" },
+        "description": { "type": "string" }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["entrypoint"],
+      "properties": {
+        "entrypoint":          { "type": "string" },
+        "inputSchema":         { "type": "object" },
+        "outputSchema":        { "type": "object" },
+        "configSchema":        { "type": "object" },
+        "hooks":               { "type": "array", "items": { "type": "string" } },
+        "riskLevel":           { "type": "string", "enum": ["low", "medium", "high"] },
+        "requiredPermissions": { "type": "array", "items": { "type": "string" } },
+        "supportsDryRun":      { "type": "boolean" }
+      }
+    }
+  }
+}

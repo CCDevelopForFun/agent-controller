@@ -1,0 +1,7 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Tool
+metadata:
+  name: bad_tool
+  version: 0.1.0
+spec:
+  riskLevel: low

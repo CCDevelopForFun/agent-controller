@@ -1,0 +1,222 @@
+# ADL ↔ Harness Capability Matrix
+
+> **Status:** v0.2 acceptance state. Pi column is the source of truth as of `v0.1.10`. The opencode column is filled out as of v0.2 slice 2.6; every cell previously marked 🚧 now reflects what the `runtime-opencode/` adapter actually does after slices 2.1–2.5. The codex column is filled out as of the codex-adapter task series (slices C.1–C.x); every cell reflects what `runtime-codex/` actually does. The hermes-agent column is intentionally left blank — that adapter is deferred until declarative memory support (a separate roadmap direction) ships.
+
+This document is the artifact that justifies the claim "ADL is harness-agnostic." It enumerates every feature the ADL surface exposes today and records, for each agent harness, which of three outcomes applies:
+
+- **✅ Supported** — the spec feature compiles and runs end-to-end on the harness, behavior is observable in the wire-event trace, covered by tests.
+- **⚠️ Partial** — the feature compiles but only a subset is supported; the unsupported subset is documented in the cell.
+- **❌ Not supported** — the harness can't realize the feature at all. The spec is rejected with an error that names the unsupported field. The rejection should ideally happen at **compile time** (`agentctl compile`/`validate`) so CI catches it early, but today some rejections happen later at **adapter startup** (the runtime binary refuses to begin the session). Either is acceptable as long as silent no-ops are forbidden. Each ❌ cell specifies where the rejection currently happens.
+- **🚧 Planned** — empty cell during Phase 2 development; filled in as each capability lands in the adapter.
+
+| Legend | Meaning |
+|---|---|
+| ✅ | supported and tested |
+| ⚠️ | partial — see cell for the gap |
+| ❌ | rejected (see cell for where: compile-time, adapter-startup, or runtime) |
+| 🚧 | not yet attempted |
+
+## Adapters
+
+| Adapter | Package | Source | Status |
+|---|---|---|---|
+| Pi | `runtime/` | local TS, depends on `@earendil-works/pi-coding-agent` | `v0.1.10` shipping |
+| opencode | `runtime-opencode/` | sst/opencode via `@opencode-ai/sdk` | v0.2 dev preview (slices 2.1–2.6) |
+| codex | `runtime-codex/` | OpenAI Codex CLI (`codex exec`) | v0.7.0 dev preview (slices C.1–C.x) |
+| hermes-agent | `runtime-hermes/` (deferred) | NousResearch hermes-agent — see direction G in roadmap-directions | deferred to v0.4+ |
+
+## Feature support
+
+### ADL kinds
+
+| Kind | Pi | opencode | codex | hermes-agent |
+|---|---|---|---|---|
+| `Agent` (top-level `kind: Agent`) | ✅ | ✅ | ✅ | 🚧 |
+| `Tool` (registry manifest) | ✅ | ⚠️ — only Pi *built-in* tools (`bash`, `read`, `edit`, `write`) map onto opencode permissions; custom Pi-extension tools (entrypoint set, builtin unset) are rejected at **compile time** in `agentctl compile` as of v0.3.4 (adapter startup retains the same check as defense-in-depth) | ⚠️ — Pi built-in tools (`bash`, `read`, `edit`, `write`) are recognized in the spec but the codex sandbox provides its own equivalent tool surface; custom Pi-extension tools (entrypoint set, `builtin` unset) are **rejected at adapter startup** with a field-naming error | 🚧 |
+| `Extension` (registry manifest) | ✅ | ❌ — Pi extension JS modules do not run inside opencode. Any non-empty `spec.extensions[]` is rejected at **compile time** in `agentctl compile` as of v0.3.4 (was adapter-startup; adapter retains the check as defense-in-depth). `agentctl validate` (schema-only) still does NOT catch this — see Phase 2 follow-up notes | ❌ — any non-empty `spec.extensions[]` is **rejected at adapter startup** with a field-naming error | 🚧 |
+| `Skill` (loose `<root>/skills/<name>/SKILL.md` discovery, no manifest required) | ✅ — synthesized at scan time, matching Pi's `loadSkillsFromDir` convention; `kind: Skill` IS in `manifest.v1.json` but the normal path is SKILL.md-only | ✅ — SKILL.md bodies are read at startup, YAML frontmatter stripped, body inlined into the primary agent's `prompt` wrapped via `wrapSkillBody`. Same "active by default" semantic Pi adapter uses since v0.1.7 (slice 2.5) | ✅ — SKILL.md bodies are read at startup, YAML frontmatter stripped, and inlined into the prompt via `wrapSkillBody`. Same "active by default" semantic. | 🚧 |
+| `Subagent` (loose `<root>/agents/<slug>.md` discovery, no manifest required) | ✅ — synthesized at scan time; `kind: Subagent` is NOT in `schemas/manifest.v1.json` and a user-authored manifest with that kind would be rejected | ✅ — each `.md` frontmatter is parsed (name, description, model, tools — both YAML-array and Pi's comma-separated forms) and registered as `cfg.agent[name]` with `mode: "subagent"`. The primary agent gets `task: allow` only when at least one subagent is declared (slice 2.5) | ❌ — any non-empty `spec.subagents[]` is **rejected at adapter startup** with a field-naming error. Codex runs as a single-agent process with no subagent delegation mechanism. | 🚧 |
+| `MCPServer` (spec.mcpServers[]) | ✅ — via `pi-mcp-extension` | ✅ — stdio → `cfg.mcp[name]` with `type: local`; streamable-http / sse → `type: remote`. Permission grants emitted as `<server>_*: allow` (both raw and sanitized forms). Names that would overmatch built-ins (e.g. `repo`) or contain glob metacharacters are rejected (slice 2.5) | ✅ — stdio → `[mcp_servers.<name>]` block in `$CODEX_HOME/config.toml` with `command` + optional `args`/`env`; streamable-http → `url` field. SSE transport ❌ (not in the codex TOML schema — rejected at adapter startup). Server names must match `[A-Za-z0-9_-]+`. | 🚧 |
+| `Workflow` (planned A.1) | ❌ — v0.2+ work | ❌ — v0.2+ work | ❌ — v0.2+ work | 🚧 |
+| `Conversation` (planned A.3) | ❌ — v0.2+ work | ❌ — v0.2+ work | ❌ — v0.2+ work | 🚧 |
+| `RuntimeBinding` (separate resource, v0.3.2+) | ✅ — schema (v0.3.2) + types + matcher (v0.3.3) all ship. `agentctl run --binding <path>` loads a Binding; `LocalBackend.Resolve()` enforces selector match + capability match (warn-but-proceed unless `target.strict: true`). | ✅ — same plumbing: `agentctl run --binding` works against opencode-typed Agents (selector `runtimeType: local-opencode`). The Backend interface is shared between adapters. | ✅ — same shared Backend interface; `agentctl run --binding` works against codex-typed Agents (selector `runtimeType: local-codex`). | 🚧 |
+
+### spec.model
+
+| Feature | Pi | opencode | codex | hermes-agent |
+|---|---|---|---|---|
+| `provider: anthropic` | ✅ | ✅ — passed as `anthropic/<model-name>` in cfg.agent.model | ❌ — **rejected at adapter startup**: codex only supports provider `openai`. Error names the offending provider. | 🚧 |
+| `provider: openai` | ✅ (via pi-ai) | ✅ — passed as `openai/<model-name>`; opencode resolves via its own provider table | ✅ — passed as `--model <name>` to `codex exec`; codex resolves via its own OpenAI provider. | 🚧 |
+| `provider: google` | ✅ (via pi-ai) | ✅ — passed as `google/<model-name>` | ❌ — rejected at adapter startup (same check as `anthropic`). | 🚧 |
+| Other providers | ❌ — schema enum rejects | ❌ — schema enum rejects (same enum used by both adapters) | ❌ — schema enum rejects; additionally the adapter's `assertCodexCompatible` defense-in-depth check fires for any non-`openai` provider that slips through. | ❌ |
+| `temperature` | ⚠️ — silently ignored when Pi enables `thinking`; documented MVP limit | ✅ — propagated to cfg.agent.temperature 1:1 | ❌ — `codex exec` has no temperature flag; the field is accepted by the ADL schema but silently ignored by the codex adapter. | 🚧 |
+| `ANTHROPIC_BASE_URL` override | ✅ — see the "Model gateway connection flow" section of [overview.md](./overview.md) | ⚠️ — opencode picks up `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL` from the spawned process env (we redirect `HOME`/`XDG_*` to an isolated temp dir per slice 2.4, but `ANTHROPIC_*` env vars are passed through). Subagents inherit the same env | n/a — codex connects to OpenAI exclusively; `ANTHROPIC_*` env vars are irrelevant. The codex adapter reads `OPENAI_API_KEY` from the process env and seeds it into a fresh `CODEX_HOME` via `codex login --with-api-key`. | 🚧 |
+
+### spec.persona
+
+| Feature | Pi | opencode | codex | hermes-agent |
+|---|---|---|---|---|
+| `role` (string) | ✅ — appended to system prompt | ✅ — composed into `cfg.agent.prompt` after the honesty preamble (slice 2.2) | ✅ — composed into the `--instructions` prompt passed to `codex exec` after the honesty preamble | 🚧 |
+| `instructions` (string) | ✅ — appended to system prompt | ✅ — composed into `cfg.agent.prompt` after the role section (slice 2.2) | ✅ — composed into the `--instructions` prompt after the role section | 🚧 |
+
+### spec.tools[]
+
+| Feature | Pi | opencode | codex | hermes-agent |
+|---|---|---|---|---|
+| Pi built-in `bash` | ⚠️ — ✅ on its own (since v0.1.9); **deactivated when `spec.mcpServers[]` is non-empty** because the adapter switches to `noTools: "builtin"` to suppress all built-in tools and let MCP tools enter the registry. Combining built-ins with MCP servers in the same spec is currently unsupported; v0.2+ work. | ✅ — maps to opencode permission `bash: allow`. Coexists with `spec.mcpServers[]` (no exclusivity restriction on the opencode side) | ✅ — the codex sandbox (`-s workspace-write`) provides shell/read/write access natively; declaring `bash` in `spec.tools` is accepted without error (the ADL built-in flag is recognized). The codex sandbox controls what the model can do regardless of the ADL tools list. | 🚧 |
+| Pi built-in `read` | ⚠️ — same MCP-incompatibility caveat as `bash` | ✅ — maps to opencode permission `read: allow` | ✅ — same as `bash`: accepted without error; the codex sandbox provides the capability directly. | 🚧 |
+| Pi built-in `edit` | ⚠️ — same MCP-incompatibility caveat as `bash` | ✅ — maps to opencode permission `edit: allow` | ✅ — same as `bash`. | 🚧 |
+| Pi built-in `write` | ⚠️ — same MCP-incompatibility caveat as `bash` | ⚠️ — opencode has no separate `write` permission; `write` collapses onto `edit: allow` (which already gates file creation/overwrite). Declaring both `edit` and `write` is idempotent | ✅ — same as `bash`. | 🚧 |
+| Custom tool (registry manifest with Pi-extension entrypoint) | ✅ | ❌ — rejected at **compile time** in `cli/internal/adl/compiler.go::checkOpencodeIncompatibilities` as of v0.3.4 (was adapter-startup in `buildOpencodeConfig`; the runtime check stays as defense-in-depth). Error names every offending tool | ❌ — **rejected at adapter startup** by `assertCodexCompatible`. Error names every offending tool. | 🚧 |
+| `config` on built-in tools (e.g. bash allowlist) | ❌ — rejected at compile time as of v0.1.11. Pi built-ins (`bash`/`read`/`edit`/`write`) have no per-tool config plumbing. Use [`@gotgenes/pi-permission-system`](https://www.npmjs.com/package/@gotgenes/pi-permission-system) as a `spec.extensions[].source: npm:` entry instead — see [`examples/bash-allowlist.yaml`](../../examples/bash-allowlist.yaml). The rejection lives in `cli/internal/adl/compiler.go::Compile`, so `agentctl compile` catches it. **NOTE:** `agentctl validate` (JSON Schema only) does NOT catch it today — CI gates that stop at `validate` will still pass the silently-broken spec. Moving the check into Schema or into a post-validate hook is a v0.3 follow-up. | ❌ — rejected at compile time (same canonical check as Pi). The opencode adapter retains a runtime defense-in-depth check that fires if a hand-crafted CompiledSpec bypasses the compiler. | ❌ — rejected at compile time (same canonical check). Adapter startup retains a defense-in-depth check. | 🚧 |
+
+### spec.extensions[]
+
+| Feature | Pi | opencode | codex | hermes-agent |
+|---|---|---|---|---|
+| Registry-resolved extension (Pi module) | ✅ | ❌ — rejected at startup with a field-naming error (slice 2.5) | ❌ — any non-empty `spec.extensions[]` is **rejected at adapter startup** with a field-naming error | 🚧 |
+| `source: npm:<pkg>` self-install (since v0.1.6) | ✅ | ❌ — rejected at startup; opencode has its own plugin model that's not API-compatible with Pi's extension format | ❌ — rejected at adapter startup (same check) | 🚧 |
+| `config: { ... }` per extension | ✅ — via `AGENT_CONTROLLER_EXT_CONFIG` env | ❌ — extensions are rejected outright; per-extension config is moot | ❌ — extensions are rejected outright | 🚧 |
+
+### spec.skills[]
+
+| Feature | Pi | opencode | codex | hermes-agent |
+|---|---|---|---|---|
+| Skill registration (visible to model via system prompt) | ✅ | ✅ — body inlined into `cfg.agent.prompt` (slice 2.5) | ✅ — body inlined into the `--instructions` prompt | 🚧 |
+| Active skill bodies (inlined into appendSystemPrompt — v0.1.7) | ✅ | ✅ — same "active by default" semantic as Pi. Each `<root>/skills/<name>/SKILL.md` is read at startup, YAML frontmatter is stripped, and the body is wrapped via `wrapSkillBody()` (which prepends the "this skill may describe tools you lack" preamble) before being appended to the prompt | ✅ — same "active by default" semantic as Pi and opencode. `readSkillBodies` reads each SKILL.md at startup, strips frontmatter, and passes bodies to `buildPrompt` which wraps them via `wrapSkillBody()` before appending to the instructions prompt | 🚧 |
+| `agentskills.io` standard compliance | ⚠️ — Pi skills follow agentskills format but Pi's loader is its own | ⚠️ — same shape as Pi: SKILL.md with YAML frontmatter + body. Our adapter does its own parse rather than going through opencode's native skill loader; the user-visible behavior matches agentskills | ⚠️ — same shape as Pi and opencode: SKILL.md with YAML frontmatter + body. The adapter does its own parse; user-visible behavior matches agentskills | 🚧 — hermes-agent is agentskills-compliant per docs |
+
+### spec.subagents[]
+
+| Feature | Pi | opencode | codex | hermes-agent |
+|---|---|---|---|---|
+| Hierarchical delegation (parent calls child as tool) | ✅ — via vendored Pi subagent extension (since v0.1.3) | ✅ — declared subagents become `cfg.agent[name]` with `mode: "subagent"`. Primary agent gets `task: allow` to invoke them via opencode's native task tool. opencode's own native agents (`plan`, `build`, `general`, `explore`, `scout`) are explicitly disabled in `cfg.agent` so the task tool cannot bypass the ADL allowlist by delegating to undeclared natives (slices 2.5 codex passes 4, 6) | ❌ — any non-empty `spec.subagents[]` is **rejected at adapter startup**. Codex has no multi-agent delegation mechanism; subagent specs must target a different runtime. | 🚧 |
+| Subagents inherit `ANTHROPIC_BASE_URL` (via PI_CODING_AGENT_DIR models.json) | ✅ — see [overview.md](./overview.md) connection-flow section | ✅ — same opencode server handles all subagents; `ANTHROPIC_*` env is inherited from the parent agent-controller process. Subagent model strings are normalized: bare `claude-sonnet-4-...` gets the primary spec's provider prepended | n/a — subagents not supported | 🚧 |
+
+### spec.mcpServers[]
+
+| Feature | Pi | opencode | codex | hermes-agent |
+|---|---|---|---|---|
+| stdio transport | ✅ | ✅ — `cfg.mcp[name] = { type: "local", command: [command, ...args], environment }` | ✅ — emitted as `[mcp_servers.<name>]` TOML block with `command` + optional `args`/`env` in `$CODEX_HOME/config.toml` | 🚧 |
+| streamable-http transport | ✅ — passed through to pi-mcp-extension | ✅ — `cfg.mcp[name] = { type: "remote", url, headers }` | ✅ — emitted as `[mcp_servers.<name>]` TOML block with `url` field | 🚧 |
+| sse transport | ✅ | ✅ — same as streamable-http; both collapse onto opencode's `type: remote` (the transport handshake is negotiated at the endpoint) | ❌ — **rejected at adapter startup**: the codex TOML schema has no SSE transport type. Use `streamable-http` or `stdio` instead. | 🚧 |
+| `lifecycle: eager` / `lifecycle: lazy` | ✅ — passthrough | ⚠️ — opencode has no direct equivalent. opencode lazily fetches tools on demand, which is closer to `lazy`. `lifecycle: eager` is silently treated the same way | ⚠️ — codex has no equivalent `lifecycle` concept; the field is accepted by the ADL schema but silently ignored | 🚧 |
+| Per-server env / headers | ✅ — passthrough | ✅ — `environment` on stdio servers, `headers` on remote servers | ⚠️ — `env` is supported for stdio servers (emitted as a `[mcp_servers.<name>.env]` TOML subtable). `headers` on streamable-http servers are not emitted (the codex TOML schema has no header field for remote servers) — silently ignored in v1. | 🚧 |
+| Server-name validation | (no opencode equivalent) | ⚠️ — opencode-only: server names must match `[A-Za-z0-9._-]+`. Names that would overmatch built-in permissions via the wildcard `<name>_*` allow grant (e.g. `repo` matches `repo_clone`) or that sanitize to the same key as another declared server (e.g. `github.com` and `github_com`) are rejected at adapter startup | ⚠️ — codex-only: server names must match `[A-Za-z0-9_-]+` (stricter — no dots). Rejected at adapter startup. | 🚧 |
+
+### spec.installs[] (deprecated)
+
+| Feature | Pi | opencode | codex | hermes-agent |
+|---|---|---|---|---|
+| Deprecated installs list | ⚠️ — `agentctl run` emits a deprecation warning and **otherwise ignores** the list; the runtime does NOT auto-install packages from it. The values are consumed only by `agentctl install --from <spec.yaml>`, which iterates them and shells out to `pi install npm:<name>`. For runtime auto-install, use `spec.extensions[].source` (v0.1.6+). | ❌ — rejected at startup with a clear error directing the user to use `spec.extensions[].source` on the Pi adapter (slice 2.4) | ❌ — **rejected at adapter startup** by `assertCodexCompatible` | 🚧 |
+
+### spec.guardrails
+
+| Feature | Pi | opencode | codex | hermes-agent |
+|---|---|---|---|---|
+| `hallucinationDetector: block` (v0.1.10 default) | ✅ — wire `error` event, session ends reason=error | ✅ — same semantic. `honesty.ts` is mirrored in `runtime-opencode/src/` and the detector runs on every flush including intermediate multi-message turn flushes (slice 2.5 codex pass 30) | ✅ — `honesty.ts` is mirrored in `runtime-codex/src/`. Detector runs on every `agent_message` from `codex exec`. Emits `error` + `session.ended{reason:"error"}` and sets exit 1. | 🚧 |
+| `hallucinationDetector: warn` | ✅ — wire `warning` event, XML scrubbed | ✅ — same semantic | ✅ — same semantic: fabricated XML scrubbed, `warning` event emitted, session continues. | 🚧 |
+| `hallucinationDetector: correct` | ✅ — warn + one corrective re-prompt | ✅ — warn + one corrective re-prompt via `session.promptAsync(CORRECTION_PROMPT)`. Resets the idle-tracking so the correction turn must complete with its own `session.idle` before the run can succeed | ⚠️ — **degrades to `warn` in v1**. A corrective re-prompt would require a new `codex exec resume` invocation, which is out of scope for this single-shot adapter. The XML is scrubbed and a `warning` event is emitted (same as `warn` mode); no re-prompt is issued. | 🚧 |
+
+### spec.runtime
+
+As of v0.2 slice 2.1 the ADL schema accepts `type: local | local-pi | local-opencode`. The codex adapter adds `type: local-codex`. The CLI dispatches in `cli/cmd/agentctl/main.go::resolveRuntimeCommand`; the staleness check is scoped to the adapter directory derived from the chosen type.
+
+| Feature | Pi | opencode | codex | hermes-agent |
+|---|---|---|---|---|
+| `type: local` (legacy v0.1.x alias for `local-pi`) | ✅ | n/a | n/a | n/a |
+| `type: local-pi` | ✅ — explicit alias, identical behavior to `local` | n/a | n/a | n/a |
+| `type: local-opencode` | n/a | ✅ — full session dispatch (slices 2.1–2.5). Runs opencode as a subprocess via `@opencode-ai/sdk`'s `createOpencode()`, prompts via `session.promptAsync`, streams events back over SSE, translates to the wire protocol | n/a | n/a |
+| `type: local-codex` | n/a | n/a | ✅ — full session dispatch. Spawns `codex exec` as a subprocess, seeds a per-session `CODEX_HOME`, reads JSONL stdout, translates to the wire protocol via `event-translator.ts`. | n/a |
+| `type: local-hermes` (planned v0.4+) | n/a | n/a | n/a | ❌ — not in schema; the hermes-agent adapter is deferred |
+| `type: agentcore`, `k8s` (planned v0.3+) | ❌ — not in schema; reserved language is in the README, not the schema enum | ❌ | ❌ | ❌ |
+| `requirements` (free-form capability flags, v0.3.1+) | ✅ — schema accepts, compiler passes through to CompiledSpec, and `LocalBackend.Resolve()` (v0.3.3) matches against the active Binding's `selector.capabilities`. Unmet `k: true` requirements emit a wire `warning` event (warn-but-proceed) by default; the run still proceeds. Set `target.strict: true` on the binding to refuse runs with unmet requirements. Without `--binding`, requirements are still advisory (v0.2.x semantics preserved). | ✅ — same matcher (interface lives in the shared Go CLI, not the adapter). | ✅ — same shared matcher. | 🚧 |
+
+### Session lifecycle
+
+| Feature | Pi | opencode | codex | hermes-agent |
+|---|---|---|---|---|
+| `--resume <id>` (file-backed sessions, v0.1.1) | ✅ — via Pi's `SessionManager.continueRecent` | ✅ — since slice 8.1: agentctl keys a stable per-session opencode data dir off the session id, so a freshly-spawned server resumes the persisted session (reuse-by-id, mirroring opencode's own `run --continue`). Requires a consistent working directory across turns (opencode scopes sessions by project directory) | ✅ — agentctl keys a stable per-session `CODEX_HOME` directory off the session id (`resolveCodexHome`). The thread_id from the previous turn is persisted in `$CODEX_HOME/.agentctl-thread-id`; the next `codex exec` receives it via `--thread-id` to resume the conversation. Ephemeral homes (no `--resume`) are wiped after each run. | 🚧 — hermes has its own session search/recall |
+| `agentctl sessions list` | ✅ | ❌ — opencode-side sessions aren't tracked in agentctl's `.pi-sessions/` index. Listing them would require a separate `sessions` subcommand that queries opencode's own session store | ❌ — codex-side sessions aren't tracked in agentctl's session index. The stable `CODEX_HOME` directories live under the agentctl data dir keyed by session id; listing them would require a separate subcommand. | 🚧 |
+| `audit.log` extension | ✅ — registered as a Pi extension | ❌ — extensions are Pi-only (see `spec.extensions[]` above). The audit-log functionality would need to be reimplemented as an opencode plugin or as wire-event consumer hooks in the adapter | ❌ — extensions are unsupported. Audit-log functionality would need to be a wire-event consumer hook in the adapter. | 🚧 |
+
+### Wire-protocol events emitted
+
+| Event | Pi | opencode | codex | hermes-agent |
+|---|---|---|---|---|
+| `session.started` | ✅ | ✅ — emitted after opencode boots and the SSE stream is connected | ✅ — emitted after `codex exec` is spawned and the JSONL stream is connected | 🚧 |
+| `model.request` | ✅ | ❌ — opencode does not surface per-model-request events on its SSE stream; the adapter cannot synthesize one without losing fidelity. Future work: hook into opencode's internal LLM dispatch | ❌ — `codex exec` JSONL does not surface per-model-request events; the adapter cannot synthesize one without losing fidelity. | 🚧 |
+| `model.response` | ✅ | ❌ — same reason as `model.request` | ❌ — same reason as `model.request` | 🚧 |
+| `tool.call` | ✅ | ✅ — deduped on opencode's `callID`; only one `tool.call` per invocation even on multiple "running" updates (slice 2.4 codex pass 13) | ✅ — emitted on `function_call` items in codex JSONL output | 🚧 |
+| `tool.result` | ✅ | ✅ — reads from `state.output` on completion or `state.error` on failure | ✅ — emitted on `function_call_output` items in codex JSONL output | 🚧 |
+| `message` (role: user / assistant) | ✅ | ✅ — user text emitted immediately; assistant text accumulated across `message.part.updated` deltas and flushed on `session.idle` (or messageID switch). Hallucination detector runs on every flush including intermediate ones | ✅ — emitted on `agent_message` items in codex JSONL output; hallucination detector runs on each message | 🚧 |
+| `warning` (v0.1.10) | ✅ | ✅ — emitted by the hallucination detector in `warn` / `correct` modes when fabricated tool-call XML is scrubbed | ✅ — same semantic: emitted by the hallucination detector in `warn` / `correct` (degrades to `warn`) modes | 🚧 |
+| `error` | ✅ | ✅ — emitted on `block` mode hallucination, opencode `session.error`, SSE connection failure, and runtime errors | ✅ — emitted on `block` mode hallucination, `codex exec` non-zero exit, spawn errors (e.g. `codex` not on PATH), and runtime errors | 🚧 |
+| `session.ended` (reason: completed \| error \| cancelled) | ⚠️ — emits `completed` on success and `error` on terminal failure. Does NOT currently emit `cancelled` on SIGINT/SIGTERM — the signal routes through `backend.Stop` and the run surfaces as `error`. Cross-adapter cancellation parity is a v0.3 follow-up | ✅ — emits `completed` on `session.idle`, `error` on terminal error, **and `cancelled` on SIGINT/SIGTERM** (slice 2.4 codex pass 5) | ⚠️ — emits `completed` on clean `codex exec` exit and `error` on failure. Does NOT currently emit `cancelled` on SIGINT/SIGTERM — cancellation surfaces as `error`. Parity with opencode is a follow-up. | 🚧 |
+
+### Operating modes (process model)
+
+| Flavor | Pi | opencode | codex | hermes-agent |
+|---|---|---|---|---|
+| One-off (`agentctl run`) | ✅ | ✅ — primary target of v0.2.0, working end-to-end | ✅ — primary target of the codex adapter | 🚧 |
+| Session resume (`--resume`) | ✅ | ✅ — since slice 8.1 (stable per-session data dir + reuse-by-id) | ✅ — stable per-session `CODEX_HOME` + persisted `thread_id` file; `codex exec --thread-id` resumes the conversation | 🚧 |
+| Interactive REPL (`agentctl chat`) | ❌ — planned v0.1.11+ | ❌ — same status as Pi; the CLI-level flow hasn't been built yet | ❌ — same status as Pi and opencode | 🚧 |
+| Long-lived daemon (`agentctl serve`) | ✅ — v0.8; HTTP/SSE via `agentctl serve` | ✅ — v0.8; HTTP/SSE via `agentctl serve` | ✅ — v0.8; `agentctl serve` uses the same adapter-dispatch path; works with the codex adapter | 🚧 |
+| AG-UI server | ❌ — planned v0.3+ | ❌ — same | ❌ — same | 🚧 |
+| ACP server | ❌ native — planned v0.3+ | ⚠️ — opencode itself ships an ACP server; reaching Zed via the agent-controller wrapper would require wiring an ACP shim into the adapter's session lifecycle. Not done in v0.2.0 | ❌ — codex has no ACP server interface; same status as Pi | 🚧 — hermes-agent itself is in the ACP Registry, but our hermes adapter is deferred entirely. |
+| Triggered / event-driven | ❌ — planned v0.2+ | ❌ — same status as Pi | ❌ — same status as Pi | 🚧 |
+
+### Native sandbox
+
+| Feature | Pi | opencode | codex | hermes-agent |
+|---|---|---|---|---|
+| Native sandbox | ❌ — Pi has no built-in sandbox; sandbox is advisory (`requirements.sandbox`) and not enforced by the LocalBackend. Enforcement is deferred (see roadmap slice 4.5 / LocalBackend variant). | ❌ — same as Pi; no native sandbox in the opencode adapter. | ✅ — **the only adapter with a native sandbox**. `codex exec` is always spawned with `-s workspace-write`, which restricts codex's file-system access to writes within the current workspace directory. This is codex's own built-in sandbox mechanism, not an agentctl enforcement layer. | 🚧 |
+
+### Hermetic E2E support
+
+| Feature | Pi | opencode | codex | hermes-agent |
+|---|---|---|---|---|
+| Fake-provider for tests (no live API key needed) | ⚠️ — Layer 1 (in-process vitest E2E, `runtime/src/e2e/`) is hermetic via `runtime/src/testing/fake-provider.ts` (slice 1.1). Layer 2 (subprocess shell harness, `e2e/run.sh`) still requires `AGENT_CONTROLLER_RUN_LIVE=1` + `ANTHROPIC_API_KEY`. Bridging Layer 2 onto the fake-provider path is tracked as a v0.2 follow-up — see `e2e/README.md`. | ❌ — opencode runs in a separate subprocess (spawned via the SDK) that does NOT go through pi-ai's `getModel()`, so the api-registry monkey-patch the Pi fake-provider relies on cannot reach it. The unit-test suite (75/75 in `runtime-opencode/src/`) exercises every code path through `buildOpencodeConfig`, the event translator, and the SDK plumbing without contacting a real model; the only path not hermetically covered is "opencode actually invokes the model and streams events back." Mocking that requires an Anthropic-API-compatible mock server pointed to via `ANTHROPIC_BASE_URL` — tracked as a v0.3 follow-up | ❌ — codex runs in a separate subprocess and contacts OpenAI directly; there is no mock-server hook equivalent. The unit-test suite in `runtime-codex/src/` covers `assertCodexCompatible`, `buildCodexArgs`, `buildConfigToml`, the event translator, and the CODEX_HOME lifecycle without contacting a real model. Hermetic E2E coverage of the live `codex exec` path is a follow-up. | 🚧 |
+| Schema-sync test (drift between root and embedded copies) | ✅ (v0.2 slice 1.2) | n/a (single source of truth via the CLI; the CLI is shared across adapters) | n/a | n/a |
+
+---
+
+## How this document is maintained
+
+- **Pi column moves first.** When a slice lands that adds, changes, or constrains an ADL feature on the Pi adapter, update Pi's cell as part of the same PR. The reviewer should reject a feature-change PR that doesn't update this matrix.
+- **opencode column moves during Phase 2.** Each `runtime-opencode/` slice should fill the relevant cells in the same commit that implements the mapping. The Phase 2 acceptance gate (in the v0.2 execution plan) is "every cell currently marked 🚧 is either ✅, ⚠️, or ❌." Specs that ask for ❌ features fail (today at adapter startup; v0.3 follow-up is to move rejection into `agentctl compile`) with a field-naming error.
+- **codex column moves with the codex adapter.** Each `runtime-codex/` slice should fill the relevant cells in the same commit that implements the mapping. Every cell is now either ✅, ⚠️, or ❌ — no 🚧 cells remain.
+- **hermes-agent column moves during v0.4+.** Until declarative memory support lands, the hermes-agent adapter is deferred and the column stays 🚧.
+- **New ADL surface area** (e.g. a new `kind`, a new spec field) requires adding a row here in the same PR that adds the field. Schema-sync test (slice 1.2) doesn't catch missing matrix rows — author discipline only.
+- **Adapter-specific gaps** that we choose NOT to fix (because they fundamentally don't translate) should be ❌ in the cell with a one-sentence rationale. ❌ is honest; 🚧 is "TBD."
+
+## Phase 2 open-question resolutions
+
+These are the open questions from before Phase 2 started, and how slices 2.1–2.6 actually resolved each:
+
+1. **Custom Pi-extension tools** — RESOLVED (a) reject. `runtime-opencode/src/opencode-config.ts::rejectUnsupportedTools` throws at **adapter startup** with an error that names every offender. Per-spec migration: switch to `runtime.type: local` or remove the custom tool.
+2. **`config` on built-ins** — RESOLVED (reject). The opencode adapter rejects any spec.tools[] entry with a non-empty `config` block at **adapter startup** (slice 2.4 codex pass 27). The Pi-side v0.1.11 wrapper-extension story is still pending; users who need bash allowlists on opencode have to wait for v0.1.11 (Pi) or a future opencode permission-pattern feature.
+3. **`pi.manifest` discovery** — RESOLVED (a) reject. opencode adapter rejects any non-empty `spec.extensions[]` regardless of how the entry was resolved (slice 2.5 codex pass 19).
+4. **`thinking` mode + temperature interaction** — opencode does not currently expose a `thinking` toggle in its agent config; `temperature` is passed through 1:1 and opencode is responsible for whatever model-specific interaction applies.
+5. **Skill activation semantic** — RESOLVED. opencode adapter inlines SKILL.md bodies into the primary agent's `cfg.agent.prompt` via `wrapSkillBody()`, exactly matching Pi adapter's "active by default" semantic since v0.1.7.
+
+## Phase 2 follow-ups (deferred to v0.3+)
+
+1. **Hermetic E2E for opencode** — `e2e/run.sh` and any CI matrix that wants opencode coverage needs an Anthropic-API-compatible mock server pointed to via `ANTHROPIC_BASE_URL`. The fake-provider api-registry trick used for Pi doesn't reach the opencode subprocess.
+2. **`--resume <id>`** — works on opencode as of slice 8.1: agentctl keys a stable per-session opencode data dir off the session id so a freshly-spawned server resumes the persisted session (reuse-by-id). Requires a consistent working directory across turns (opencode scopes sessions by project directory).
+3. **`audit-log` parity** — opencode currently has no Pi-extension equivalent for our audit-log extension. Could be implemented as wire-event consumer hooks in the adapter, or as an opencode-native plugin.
+4. **`cancelled` reason parity** — opencode adapter emits `session.ended { reason: "cancelled" }` on SIGINT/SIGTERM; Pi adapter does not. Cross-adapter parity is a v0.3 follow-up.
+5. **`scout` and other experimental opencode natives** — we proactively disable `plan`, `build`, `general`, `explore`, `scout`. New opencode natives added in future releases would silently leak into the allowlist unless we re-audit; consider a runtime cross-check that lists opencode's actual native agents and warns if any are unaccounted for.
+6. ~~**Move opencode-unsupported-field rejection into `agentctl compile`**~~ **CLOSED in v0.3.4 (slice 3.4).** The adapter-capability check now runs inside `cli/internal/adl/compiler.go::checkOpencodeIncompatibilities` for `runtime.type: local-opencode`, catching `spec.extensions[]`, `spec.installs[]`, and custom Pi-extension tools in `spec.tools[]` at `agentctl compile` time. (As of slice 8.1 `--resume` works on both adapters, so the CLI no longer rejects `--resume` + `local-opencode`.) The runtime adapter retains the same checks as defense-in-depth so hand-crafted CompiledSpecs piped directly into the adapter binary still get rejected. **`agentctl validate` still does NOT catch these** (it only runs JSON Schema validation, not Compile); a future v0.4+ follow-up could add a post-validate Compile call.
+7. **Pi adapter prototype-pollution hardening** — the opencode adapter uses null-prototype maps + `Object.hasOwn` for `spec.mcpServers[].name`-keyed maps (slice 2.5 codex pass 6). The Pi adapter still uses plain `{}` objects for the same purpose, so a malicious / pathological spec with `name: __proto__` could mutate Object.prototype. Mirror the hardening into `runtime/src/adapter.ts`.
+8. **npm-publish the runtime adapters** — GitHub Releases currently ship only the `agentctl` CLI binaries. Users must clone the repo and build the Node adapters locally. Publishing `@agent-controller/runtime` and `@agent-controller/runtime-opencode` to npm (and bundling them with the release as a separate "adapters" tarball) would unblock downloaded-binary installs. Documented in v0.2.0 release notes; tracked for v0.3.
+
+## Cross-references
+
+In-repo:
+- [overview.md](./overview.md) — architecture overview, wire protocol, connection-flow diagram.
+
+External (the author's working notes; living documents):
+- **v0.2 execution plan** — Phase 2 ships the opencode adapter and the cells in this matrix update in lockstep.
+- **roadmap-directions** — Direction G is the thesis being tested; Direction H (declarative memory) is the precondition for the hermes-agent column ever being filled.
+- **roadmap-and-known-limitations** — debt items #2 (schema sync — now closed by slice 1.2) and #5 (fake-provider E2E — now closed by slice 1.1) are the prep work that makes this matrix testable.

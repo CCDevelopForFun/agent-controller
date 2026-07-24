@@ -1,0 +1,17 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: with-installs
+  owner: ccdevelopforfun
+  description: Example ADL that declares npm packages to install via pi
+spec:
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-20250514
+  task: |
+    Tell me the current UTC time.
+  tools: []
+  installs:
+    - npm:pi-mcp-extension
+  runtime:
+    type: local

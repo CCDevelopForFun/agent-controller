@@ -1,0 +1,32 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: guardrails-correct-demo
+  owner: ccdevelopforfun
+  description: |
+    Demonstrates correct mode for the hallucination detector. When the
+    model fabricates tool-call XML, the runtime does everything `warn`
+    does (warning event + XML scrub + reason=completed) AND sends one
+    corrective re-prompt asking the model to redo its previous message
+    without the fake XML.
+
+    The re-prompt shows up as a second turn in the wire stream
+    (`message.request` + `message.response` + `message`). Cap is one
+    correction per outer task invocation, so the agent cannot loop.
+
+spec:
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-20250514
+    temperature: 0.2
+  persona:
+    role: Demo agent without any tools
+    instructions: |
+      You have no tools. Always be honest about what you cannot do.
+  task: |
+    Look up the current weather in Tokyo and return the result as JSON.
+  tools: []
+  runtime:
+    type: local
+  guardrails:
+    hallucinationDetector: correct

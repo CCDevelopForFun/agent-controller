@@ -1,0 +1,32 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: guardrails-block-demo
+  owner: ccdevelopforfun
+  description: |
+    Demonstrates the default hallucination-detector mode. When the model
+    fabricates tool-call XML (<invoke>, <function_calls>, etc.) in its
+    message text, the runtime emits a wire `error` event and ends the
+    session with reason=error and a non-zero CLI exit code.
+
+    To provoke the failure deliberately, this spec assigns a task that
+    typically requires a tool the agent does NOT have. The model is most
+    likely to refuse honestly thanks to the v0.1.8 honesty preamble; if
+    it instead writes fake <invoke> XML, the block guardrail catches it.
+
+spec:
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-20250514
+    temperature: 0.2
+  persona:
+    role: Demo agent without any tools
+    instructions: |
+      You have no tools. Always be honest about what you cannot do.
+  task: |
+    Look up the current weather in Tokyo and return the result as JSON.
+  tools: []
+  runtime:
+    type: local
+  guardrails:
+    hallucinationDetector: block

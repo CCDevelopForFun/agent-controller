@@ -1,0 +1,17 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: serve-test
+  description: Minimal self-contained agent for agentctl serve E2E tests.
+spec:
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-20250514
+  persona:
+    role: Test assistant
+    instructions: Respond concisely.
+  task: |
+    Say hello.
+  tools: []
+  runtime:
+    type: local

@@ -1,0 +1,31 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: mcp-time
+  owner: ccdevelopforfun
+  description: |
+    Demo agent that uses an MCP server for time queries.
+    Requires: npx available on PATH (used to launch @modelcontextprotocol/server-time on first run).
+spec:
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-20250514
+    temperature: 0.2
+  persona:
+    role: Time assistant
+    instructions: |
+      You are a helpful assistant. Answer questions about the current time using the
+      MCP time tools available to you (e.g. mcp_time-server_get_current_time).
+  task: |
+    What is the current UTC time? Please use the available MCP time tool to find out.
+  tools: []
+  mcpServers:
+    - name: time-server
+      transport: stdio
+      command: npx
+      args:
+        - "-y"
+        - "@modelcontextprotocol/server-time"
+      lifecycle: eager
+  runtime:
+    type: local

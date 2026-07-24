@@ -1,0 +1,78 @@
+# Example RuntimeBinding for a local `kind` cluster.
+#
+# Pair with a self-contained Agent spec (no tools[]/extensions[]/skills[]/
+# subagents[] referencing the local registry) since the K8s backend
+# launches the agent-runtime-base image, which doesn't ship the
+# repository's registry directories. Slice 4.3 supports self-contained
+# specs only; registry-backed specs are a v0.4.4 follow-up.
+#
+# Prerequisites (one-time, on the host):
+#
+#   1) kind create cluster --name agent-controller-dev
+#
+#   2) Pre-pull the image into the kind nodes so the Pod starts fast and
+#      the cluster doesn't need internet egress:
+#        docker pull ghcr.io/ccdevelopforfun/agent-runtime-base:0.1.5
+#        kind load docker-image ghcr.io/ccdevelopforfun/agent-runtime-base:0.1.5 \
+#          --name agent-controller-dev
+#
+#   3) Create the Secret with adapter credentials:
+#        kubectl create secret generic anthropic-creds \
+#          --from-literal=ANTHROPIC_API_KEY=sk-ant-... \
+#          [--from-literal=ANTHROPIC_BASE_URL=http://gateway/]
+#
+# Then point agentctl at this binding:
+#
+#   agentctl run my-spec.yaml --binding examples/bindings/kubernetes-kind.yaml
+#
+# The CLI follows the in-Pod agentctl's NDJSON wire-event stream and
+# exits when the session ends. `agentctl run` Stop()s the Pod +
+# ConfigMap on SIGINT so a Ctrl-C doesn't leave orphans behind.
+
+apiVersion: agent-controller.dev/v1alpha1
+kind: RuntimeBinding
+metadata:
+  name: kubernetes-kind
+  description: |
+    Submits the agent run to a local kind cluster using the
+    agent-runtime-base image. The kubeconfig context must be set to the
+    target cluster (kind sets `current-context` automatically after
+    `kind create cluster`).
+spec:
+  selector:
+    # The matcher requires selector.runtimeType to equal the Agent's
+    # spec.runtime.type EXACTLY. This binding accepts Agents with
+    # `runtime.type: local` only. For an opencode Agent, copy this file
+    # and set `runtimeType: local-opencode` — the KubernetesBackend
+    # detects local-opencode at Submit time and points AGENT_CONTROLLER_
+    # RUNTIME at the opencode adapter automatically.
+    runtimeType: local
+    # No capability advertisements yet — slice 4.5 will declare what
+    # the K8s target actually enforces (sandbox, restrictedNetwork,
+    # ephemeralFilesystem).
+    capabilities: {}
+  target:
+    type: kubernetes
+    # strict defaults to false — same warn-but-proceed policy as the
+    # local target until sandboxing enforcement lands in slice 4.5.
+    kubernetes:
+      namespace: default
+      image: ghcr.io/ccdevelopforfun/agent-runtime-base:0.1.5
+      secretRef:
+        # The Secret created above. Must live in the same namespace as
+        # the Pod (`namespace: default` here).
+        name: anthropic-creds
+        # Keys to import from the Secret as env vars on the Pod. Each
+        # name maps to a Secret key of the same name. Every key listed
+        # here MUST exist in the Secret — Kubernetes leaves the Pod in
+        # CreateContainerConfigError until it resolves, so don't list
+        # optional values.
+        #
+        # When running through an internal Anthropic-compatible gateway,
+        # include the URL in the Secret AND add the key here:
+        #   kubectl create secret generic anthropic-creds \
+        #     --from-literal=ANTHROPIC_API_KEY=sk-ant-... \
+        #     --from-literal=ANTHROPIC_BASE_URL=http://gateway/
+        #   # then: keys: [ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL]
+        keys:
+          - ANTHROPIC_API_KEY

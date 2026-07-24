@@ -1,0 +1,63 @@
+# Shared Agent spec for the scheduler-integration examples.
+#
+# Each scheduler-specific example in this directory invokes THIS spec
+# via `agentctl run`, passing `--input text=<the text to classify>` and
+# `--output-file <path>` so the classification result flows back into
+# the workflow's next step. The same YAML works for Maestro, Airflow,
+# and Temporal — they only differ in how they shell out to agentctl
+# and how they read the result file.
+#
+# v0.7 surface used:
+#   - `${inputs.text}` interpolation in spec.task (slice 7.1)
+#   - `spec.outputSchema` + `--output-file` for typed result (slice 7.2)
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: text-classifier
+  description: Classifies the sentiment of an input text snippet with a confidence score.
+spec:
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-6
+    temperature: 0
+  persona:
+    role: Sentiment classifier
+    instructions: |
+      You are a sentiment-classification agent. Read the text and decide
+      whether the overall sentiment is positive, negative, or neutral.
+      Score your confidence between 0 (uncertain) and 1 (certain).
+  task: |
+    Classify the sentiment of the following text. Respond with ONE JSON
+    object and nothing else — no markdown code fences, no surrounding
+    prose, no trailing commentary.
+
+    The JSON object must have EXACTLY these two fields:
+      - "label": one of "positive", "negative", or "neutral"
+      - "confidence": a number between 0 and 1 inclusive
+
+    Example of a valid reply (structure only — pick the real values):
+    {"label": "positive", "confidence": 0.92}
+
+    The CLI extracts the JSON from your reply and validates it against a
+    strict schema (these exact keys, these allowed values, no extras), so
+    any deviation will fail the run.
+
+    Text to classify:
+    ${inputs.text}
+  outputSchema:
+    type: object
+    additionalProperties: false
+    required: [label, confidence]
+    properties:
+      label:
+        type: string
+        enum: [positive, negative, neutral]
+        description: The sentiment classification.
+      confidence:
+        type: number
+        minimum: 0
+        maximum: 1
+        description: Confidence in the classification.
+  tools: []
+  runtime:
+    type: local

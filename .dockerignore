@@ -1,0 +1,61 @@
+# Repo-root .dockerignore for the agent-runtime-base image build.
+# Build context is the repo root (Dockerfile lives in runtime-image/ but COPYs
+# from cli/ — see runtime-image/Dockerfile and .github/workflows/runtime-image.yml).
+#
+# Docker does NOT honor .gitignore — anything below mirrors gitignore entries
+# that could otherwise leak into the build context (and to remote buildx
+# builders). Codex pass 6 of slice 4.2 caught the original missing entries.
+
+# Editor / tooling state
+**/.obsidian/
+**/.vscode/
+**/.idea/
+**/excalidraw.log
+
+# Node ecosystem cruft (the npm-installed adapter ships from the registry,
+# not from local node_modules; nothing in the image build needs these).
+**/node_modules/
+**/dist/
+**/.npm/
+**/*.log
+**/coverage/
+**/.nyc_output/
+
+# Go build outputs (the image builds agentctl from cli/ source inside its
+# own buildx Go stage; the local cli/bin/agentctl checkin artifact must NOT
+# slip into the build context).
+/cli/bin/
+**/go-build/
+
+# OS scratch
+**/.DS_Store
+
+# Local-only runtime state from running an agent against this repo. These
+# can contain session IDs, MCP socket paths, and audit log entries that
+# should never leak to a remote builder.
+**/.agent-controller/
+**/.pi/
+**/audit.log
+
+# Private working notes (gitignored; never goes into images)
+docs/superpowers/
+docs/source-memo/
+
+# Git internals + history
+.git/
+.gitignore
+
+# Top-level docs / build outputs not needed inside the image
+dist/
+e2e/
+docs/
+scripts/
+
+# Other workflows + project files not needed for the image build
+.github/
+SECURITY.md
+CONTRIBUTING.md
+CHANGELOG.md
+ROADMAP.md
+README.md
+LICENSE

@@ -1,0 +1,17 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: bad-mcp-agent
+spec:
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-20250514
+  task: |
+    What time is it?
+  tools: []
+  mcpServers:
+    - name: time-server
+      transport: stdio
+      lifecycle: eager
+  runtime:
+    type: local

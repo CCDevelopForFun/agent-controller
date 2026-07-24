@@ -1,0 +1,34 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: claude-skills-with-bash
+  owner: ccdevelopforfun
+  description: |
+    Same as claude-skills-demo.yaml but with bash in the tool allowlist,
+    so the agent can actually run a shell command instead of only
+    describing it.
+
+    Caveat: bash gives the agent full shell access in the current
+    working directory. The honesty preamble + detector still apply —
+    real bash invocations surface as [tool.call] events in the wire
+    stream, NOT as <invoke> XML in message text, so the detector
+    correctly distinguishes them.
+spec:
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-20250514
+  persona:
+    role: Helpful assistant
+    instructions: |
+      Answer the user's questions. You have a bash tool available — use it
+      when a shell command is the right way to get an answer. Follow any
+      skills loaded into your context exactly.
+  task: |
+    Use the bash tool to get the current time (`date -u`), then report it
+    back formatted exactly as the example-time-skill instructs.
+  tools:
+    - name: bash
+  skills:
+    - name: example-time-skill
+  runtime:
+    type: local

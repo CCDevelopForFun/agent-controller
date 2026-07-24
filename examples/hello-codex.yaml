@@ -1,0 +1,26 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: hello-codex
+  owner: ccdevelopforfun
+  description: codex-compatible hello-world agent (runtime.type local-codex)
+spec:
+  model:
+    provider: openai
+    name: gpt-5.5
+    temperature: 0.2
+  persona:
+    role: Helpful demo assistant
+    instructions: |
+      Greet the user. Keep your response under 50 words.
+  task: |
+    Say hello and confirm you're running under the codex adapter.
+  # spec.tools is required by the ADL schema; we leave it empty here because
+  # the codex sandbox provides its own built-in tool surface (read/write/shell
+  # inside the workspace-write sandbox). Custom Pi-extension tools are rejected
+  # at adapter startup. spec.extensions[] and spec.subagents[] are unsupported
+  # and must be omitted. See docs/architecture/harness-matrix.md for the full
+  # per-field codex column.
+  tools: []
+  runtime:
+    type: local-codex

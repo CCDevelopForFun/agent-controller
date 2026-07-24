@@ -1,0 +1,38 @@
+# Editor/IDE
+.obsidian/
+.vscode/
+.idea/
+
+# Tool noise
+excalidraw.log
+
+# Node
+node_modules/
+dist/
+*.log
+
+# Python — examples/schedulers/airflow ships a .py DAG; running it
+# locally (py_compile, import) drops __pycache__/*.pyc next to it.
+# Keep that build noise out of the tree.
+__pycache__/
+*.pyc
+
+# Go
+/cli/bin/
+# Defensive: catch any accidental `go -C cli build -o cli/bin/...` (the
+# -C makes paths relative to cli/, producing cli/cli/bin/). Codex pass 1
+# of slice 4.3 caught a 60MB Mach-O binary committed under that path.
+**/cli/bin/
+
+# Session data
+.agent-controller/
+audit.log
+
+# MCP runtime config written by the runtime from spec.mcpServers — not source.
+.pi/
+
+# Personal working notes — kept out of the repo on purpose; mirror in
+# the Obsidian vault at Plumber-NBI/agent-controller/ instead.
+docs/superpowers/
+docs/source-memo/
+.worktrees/

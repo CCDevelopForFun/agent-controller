@@ -1,0 +1,11 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: hello
+spec:
+  model: { provider: anthropic, name: claude-sonnet-4-20250514 }
+  task: do a thing
+  tools: [{ name: get_time }]
+  runtime: { type: local }
+  policies:
+    forbidden: []

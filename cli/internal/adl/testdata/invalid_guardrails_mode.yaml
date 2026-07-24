@@ -1,0 +1,14 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: bad-mode
+spec:
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-20250514
+  task: hi
+  tools: []
+  runtime:
+    type: local
+  guardrails:
+    hallucinationDetector: loud

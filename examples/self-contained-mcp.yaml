@@ -1,0 +1,36 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: self-contained-mcp
+  owner: ccdevelopforfun
+  description: |
+    Self-contained MCP time demo. Declares pi-mcp-extension via
+    spec.extensions[].source so the YAML is fully self-contained —
+    no separate `agentctl install` step required.
+    Requires: npx available on PATH (used to launch @modelcontextprotocol/server-time).
+spec:
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-20250514
+    temperature: 0.2
+  persona:
+    role: Time assistant
+    instructions: |
+      You are a helpful assistant. Answer questions about the current time using the
+      MCP time tools available to you (e.g. mcp_time-server_get_current_time).
+  task: |
+    What is the current UTC time? Please use the available MCP time tool to find out.
+  tools: []
+  extensions:
+    - name: pi-mcp-extension
+      source: npm:pi-mcp-extension
+  mcpServers:
+    - name: time-server
+      transport: stdio
+      command: npx
+      args:
+        - "-y"
+        - "@modelcontextprotocol/server-time"
+      lifecycle: eager
+  runtime:
+    type: local

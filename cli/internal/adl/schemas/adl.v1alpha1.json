@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-controller.dev/schemas/adl.v1alpha1.json",
+  "title": "ADL v1alpha1 (Agent)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "agent-controller.dev/v1alpha1" },
+    "kind":       { "const": "Agent" },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name":        { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", "maxLength": 63 },
+        "owner":       { "type": "string" },
+        "description": { "type": "string" }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "task", "tools", "runtime"],
+      "properties": {
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provider", "name"],
+          "properties": {
+            "provider":    { "type": "string", "enum": ["anthropic", "openai", "google"] },
+            "name":        { "type": "string", "minLength": 1 },
+            "temperature": { "type": "number", "minimum": 0, "maximum": 2 }
+          }
+        },
+        "persona": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "role":         { "type": "string" },
+            "instructions": { "type": "string" }
+          }
+        },
+        "task": { "type": "string", "minLength": 1 },
+        "outputSchema": {
+          "type": "object",
+          "description": "Optional JSON Schema describing the structured output the agent is expected to produce as its final message. When set AND `agentctl run --output-file <path>` is passed, the CLI extracts JSON from the agent's last assistant message (stripping a single ```json fenced block if present), validates it against this schema, and writes the validated JSON to <path>. Validation failure fails the run with exit 1. Without `--output-file`, this field has no runtime effect — schema validation is gated on a consumer being present. The schema must be an object (the JSON Schema draft 2020-12 boolean-schema shorthand — `true`/`false` — is intentionally NOT supported: `true` is already expressible as `outputSchema: {}` (accept any JSON), and `false` (reject all output) has no use case. Within the object form we do not constrain the meta-schema — the CLI passes the document through to the validator verbatim."
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name":   { "type": "string" },
+              "config": { "type": "object" }
+            }
+          }
+        },
+        "extensions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name":   { "type": "string" },
+              "source": { "type": "string", "minLength": 1 },
+              "config": { "type": "object" }
+            }
+          }
+        },
+        "skills": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string" }
+            }
+          }
+        },
+        "subagents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string" }
+            }
+          }
+        },
+        "installs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "mcpServers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "transport"],
+            "properties": {
+              "name":      { "type": "string", "minLength": 1 },
+              "transport": { "type": "string", "enum": ["stdio", "streamable-http", "sse"] },
+              "lifecycle": { "type": "string", "enum": ["eager", "lazy"] },
+              "command":   { "type": "string" },
+              "args":      { "type": "array", "items": { "type": "string" } },
+              "env":       { "type": "object", "additionalProperties": { "type": "string" } },
+              "url":       { "type": "string" },
+              "headers":   { "type": "object", "additionalProperties": { "type": "string" } }
+            },
+            "if": { "properties": { "transport": { "const": "stdio" } } },
+            "then": { "required": ["command"] },
+            "else": { "required": ["url"] }
+          }
+        },
+        "runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "Which local runtime adapter to dispatch to. `local` is the legacy v0.1.x alias for `local-pi` (the Pi adapter) and stays accepted for backwards compatibility. `local-opencode` routes to the opencode adapter shipped under runtime-opencode/. `local-codex` routes to the codex adapter shipped under runtime-codex/.",
+              "enum": ["local", "local-pi", "local-opencode", "local-codex"]
+            },
+            "requirements": {
+              "type": "object",
+              "description": "Optional capability requirements the runtime must satisfy. Free-form boolean flags. Consumed by `Backend.Resolve()` against the active `RuntimeBinding`'s `spec.selector.capabilities` (v0.3.3+). Default policy is warn-but-proceed: each unmet `requirement: true` emits one wire `warning` event (`kind: unmet_runtime_requirement`) and the run continues. Set `target.strict: true` on the Binding to promote unmet requirements to a hard error before any session.started event. Without `--binding`, requirements are not evaluated (resolver is a no-op pass-through). Note: as of v0.4.0, NO Backend yet enforces capabilities like `sandbox: true` or `restrictedNetwork: true` end-to-end — the matcher trusts the Binding's advertisement. Real enforcement was originally planned for v0.4.5 but is now opportunistic background per the 2026-06-10 roadmap pivot; treat sandbox/network requirements as documentation, not policy, until a future enforcement slice lands. See ROADMAP.md (`Recorded design decisions`). Reserved well-known keys: `streaming`, `sandbox`, `gpu`, `restrictedNetwork`, `ephemeralFilesystem`. Arbitrary additional keys are accepted (e.g. `spark`, `notebookContext`) so capability bundles can advertise their own flags.",
+              "additionalProperties": { "type": "boolean" }
+            }
+          }
+        },
+        "guardrails": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Runtime safety guardrails. Each guardrail can be tuned independently. Absent fields take their default.",
+          "properties": {
+            "hallucinationDetector": {
+              "description": "How the runtime reacts when the assistant writes fabricated tool-call XML (<invoke>, <function_calls>, etc.) in its message text instead of using the real tool channel. `block` (default) emits a wire error event and ends the session with reason=error and a non-zero CLI exit. `warn` emits a wire warning event, scrubs the offending XML from the displayed message text, and lets the session run to completion. `correct` is `warn` plus one corrective re-prompt that asks the model to redo its last message without the fake XML.",
+              "type": "string",
+              "enum": ["warn", "block", "correct"],
+              "default": "block"
+            }
+          }
+        },
+        "observability": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Observability surface (slice 5.1+). Today this only controls whether agentctl emits OpenTelemetry traces (host + adapter side) and whether prompt/completion content is captured in those spans. Later slices add metrics + structured audit. Absence means OFF: the spec must opt in.",
+          "properties": {
+            "tracing": {
+              "type": "boolean",
+              "description": "When true, agentctl emits an OTel root span around the run (`agentctl.run`) and the runtime adapter (Pi as of slice 5.3; opencode in slice 5.4) emits per-LLM / per-tool / per-session child spans nested under the host root via the W3C TRACEPARENT delivered through env. All spans use OTel GenAI semantic-convention attributes (`gen_ai.system`, `gen_ai.request.model`, `gen_ai.operation.name`). The OTLP endpoint is selected by the standard `OTEL_EXPORTER_OTLP_ENDPOINT` env var; if that env var is missing the trace provider runs as a no-op so this field is safe to leave true without an exporter configured. Default: false.",
+              "default": false
+            },
+            "captureContent": {
+              "type": "boolean",
+              "description": "When true, the runtime adapter attaches the actual prompt messages, completion text, tool-call arguments, and tool-call results as `gen_ai.*` span attributes (per OTel GenAI semconv). Off by default for privacy — only enable on runs shipping to a backend approved to store conversation content. Requires `tracing: true` to have any effect. Default: false.",
+              "default": false
+            }
+          }
+        }
+      }
+    }
+  }
+}

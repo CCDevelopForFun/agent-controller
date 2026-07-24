@@ -1,0 +1,24 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: hello-opencode
+  owner: ccdevelopforfun
+  description: opencode-compatible hello-world agent (v0.2 slice 2.6)
+spec:
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-20250514
+    temperature: 0.2
+  persona:
+    role: Helpful demo assistant
+    instructions: |
+      Greet the user. Keep your response under 50 words.
+  task: |
+    Say hello and confirm you're running under the opencode adapter.
+  # spec.tools is required by the ADL schema; we leave it empty here because
+  # opencode rejects custom Pi-extension tools (e.g. `get_time` in hello.yaml)
+  # at adapter startup. spec.extensions[] and spec.skills[] are optional, so
+  # we simply omit them. See harness-matrix.md for the per-field opencode column.
+  tools: []
+  runtime:
+    type: local-opencode

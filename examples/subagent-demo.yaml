@@ -1,0 +1,23 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: subagent-demo
+  owner: ccdevelopforfun
+  description: Parent agent that delegates to sql-explorer
+spec:
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-20250514
+  persona:
+    role: Router that delegates to specialists
+    instructions: |
+      You are a router. When the user asks about anything time-related,
+      delegate to the sql-explorer subagent. Never call get_time directly.
+  task: |
+    Ask sql-explorer what the current UTC time is, then report what it says back to me.
+  tools:
+    - name: get_time   # parent has it but persona forbids using it directly
+  subagents:
+    - name: sql-explorer
+  runtime:
+    type: local

@@ -1,0 +1,10 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Extension
+metadata:
+  name: subagent
+  version: 0.1.0
+  owner: agent-controller
+  description: Delegate tasks to specialized subagents with isolated context windows
+spec:
+  entrypoint: ./entrypoint.ts
+  riskLevel: high

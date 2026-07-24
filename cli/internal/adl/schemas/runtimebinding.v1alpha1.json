@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-controller.dev/schemas/runtimebinding.v1alpha1.json",
+  "title": "RuntimeBinding v1alpha1",
+  "description": "A RuntimeBinding maps abstract agent intent (spec.runtime.type + spec.runtime.requirements on an Agent) to a concrete execution target. Bindings are separate from Agent specs so the same ADL spec can run on different infrastructure by switching the active Binding. v0.3.2 ships only the schema and types; v0.3.3 (Backend.Resolve) wires the controller-side matching that consumes them.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "agent-controller.dev/v1alpha1" },
+    "kind": { "const": "RuntimeBinding" },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identifier the user references when picking which Binding to apply (e.g. via `agentctl run --binding <name>` once that flag lands in v0.3.3)."
+        },
+        "description": { "type": "string" }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["selector", "target"],
+      "properties": {
+        "selector": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["runtimeType"],
+          "description": "Which Agents this binding is willing to host. The controller will only consider this binding if all selector conditions match the Agent's spec.runtime.* declarations.",
+          "properties": {
+            "runtimeType": {
+              "type": "string",
+              "description": "Must equal the Agent's spec.runtime.type. Use `local-pi` or `local-opencode` for explicit per-adapter bindings, or `local` for the v0.1.x legacy alias.",
+              "enum": ["local", "local-pi", "local-opencode"]
+            },
+            "capabilities": {
+              "type": "object",
+              "description": "Capabilities this Binding's target provides. When the controller (v0.3.3+) resolves an Agent's spec.runtime.requirements, every `true` requirement must be `true` here too — otherwise this Binding is skipped. v0.3.2 just declares the shape; no matching logic runs yet.",
+              "additionalProperties": { "type": "boolean" }
+            }
+          }
+        },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "description": "Where the agent runs. v0.3.x ships `type: local` (subprocess). v0.4 (slice 4.3) adds `type: kubernetes` — submits a Pod to a cluster reachable via kubeconfig.",
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "Backend implementation. `local` runs the runtime adapter as a subprocess on the same machine as agentctl. `kubernetes` (v0.4+) submits the run as a Pod built from the agent-runtime-base image. Future values: `databricks`, `agentcore` — see ROADMAP.md.",
+              "enum": ["local", "kubernetes"]
+            },
+            "runtimeCommand": {
+              "type": "string",
+              "description": "LOCAL TARGET ONLY. Override the runtime-adapter binary path. Equivalent to setting AGENT_CONTROLLER_RUNTIME at run time. Ignored when target.type is `kubernetes` — the adapter inside the Pod is fixed by the image."
+            },
+            "strict": {
+              "type": "boolean",
+              "description": "When true, the capability matcher (v0.3.3b) treats unmet `spec.runtime.requirements` on the Agent as a hard error and refuses to start the run, rather than emitting a `warning` event and proceeding. Default is false for local targets (warn-but-proceed) per the policy recorded in ROADMAP.md. v0.4 K8s target ships with the project-wide default still warn-but-proceed; sandboxing enforcement in slice 4.5 will flip it."
+            },
+            "kubernetes": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Configuration for `type: kubernetes`. Ignored when target.type is `local`. The cluster is selected by the active kubeconfig context — see ROADMAP slice 4.4 for explicit kubeconfig/context fields.",
+              "properties": {
+                "namespace": {
+                  "type": "string",
+                  "description": "Namespace in which the agent Pod and its ConfigMap are created. Default: `default`.",
+                  "default": "default"
+                },
+                "image": {
+                  "type": "string",
+                  "description": "Container image to launch. Defaults to `ghcr.io/ccdevelopforfun/agent-runtime-base:0.1.5` (the v0.6.0 release image — bundles agentctl v0.6.0, runtime adapters 0.6.0, and the full v0.6 chat surface: `agentctl chat` REPL, durable SessionStore (SQLite default), session lifecycle wire events `session.resumed` / `session.paused` / `session.expired`, `agentctl sessions sweep` for TTL retirement, per-turn OTel `chat.turn` spans. Carries forward the full v0.5 tracing track: `spec.observability.tracing` from slice 5.1, `captureContent` from slice 5.3, wire-event `apiVersion`/`traceparent` from slice 5.2, host→Pod→adapter trace propagation. Earlier image tags reject newer fields at in-Pod validation or skip features). Override to pin a different image version or point at a fork.",
+                  "default": "ghcr.io/ccdevelopforfun/agent-runtime-base:0.1.5"
+                },
+                "secretRef": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Reference to a Kubernetes Secret in the same namespace that holds adapter credentials. Required when the spec uses a provider that needs API keys (e.g. Anthropic). The Pod gets each declared key mapped to an env var of the same name.",
+                  "required": ["name"],
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "description": "Name of the Secret. Must exist in the same namespace as the Pod. Empty strings are rejected at validate time; the backend would otherwise refuse at Submit.",
+                      "minLength": 1
+                    },
+                    "keys": {
+                      "type": "array",
+                      "description": "Keys to import as env vars. Default: ANTHROPIC_API_KEY only. To inject ANTHROPIC_BASE_URL or other env vars, list them here AND make sure the Secret contains them.",
+                      "items": { "type": "string", "minLength": 1 },
+                      "default": ["ANTHROPIC_API_KEY"]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "type": { "const": "kubernetes" } }, "required": ["type"] },
+              "then": {
+                "required": ["kubernetes"],
+                "properties": {
+                  "kubernetes": {
+                    "required": ["secretRef"]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

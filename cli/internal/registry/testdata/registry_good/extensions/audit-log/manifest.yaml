@@ -1,0 +1,21 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Extension
+metadata:
+  name: audit-log
+  version: 0.1.0
+  owner: agent-controller
+  description: Append-only JSONL log of every tool call and result
+spec:
+  entrypoint: ./entrypoint.ts
+  hooks:
+    - tool_call
+    - tool_result
+  configSchema:
+    type: object
+    additionalProperties: false
+    required: [path]
+    properties:
+      path:
+        type: string
+        description: File path for the audit log
+  riskLevel: low

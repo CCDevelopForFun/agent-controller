@@ -1,0 +1,42 @@
+{
+  "v": 1,
+  "metadata": {
+    "name": "hello",
+    "owner": "ccdevelopforfun",
+    "description": "MVP hello-world agent"
+  },
+  "model": {
+    "provider": "anthropic",
+    "name": "claude-sonnet-4-20250514",
+    "temperature": 0.2
+  },
+  "persona": {
+    "role": "Helpful demo assistant",
+    "instructions": "Greet the user and tell them the current time using the get_time tool.\n"
+  },
+  "task": "Tell me the current UTC time.\n",
+  "tools": [
+    {
+      "name": "get_time",
+      "entrypoint": "<REGISTRY>/tools/get_time/entrypoint.ts"
+    }
+  ],
+  "extensions": [
+    {
+      "name": "audit-log",
+      "entrypoint": "<REGISTRY>/extensions/audit-log/entrypoint.ts",
+      "config": {
+        "path": "./audit.log"
+      }
+    }
+  ],
+  "skills": [
+    {
+      "name": "example-time-skill",
+      "entrypoint": "<REGISTRY>/skills/example-time-skill/SKILL.md"
+    }
+  ],
+  "runtime": {
+    "type": "local"
+  }
+}

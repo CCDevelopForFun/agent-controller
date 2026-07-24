@@ -1,0 +1,18 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: hello
+  owner: ccdevelopforfun
+  description: Agent with installs declared
+spec:
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-20250514
+  task: |
+    Tell me the current UTC time.
+  tools: []
+  installs:
+    - npm:pi-mcp-extension
+    - npm:some-other-package
+  runtime:
+    type: local

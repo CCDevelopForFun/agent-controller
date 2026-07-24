@@ -1,0 +1,32 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: claude-skills-demo
+  owner: ccdevelopforfun
+  description: |
+    Demo agent loading a Claude Code skill (using-superpowers) plus the
+    local example-time-skill. Proves ADL skills from external sources work
+    end-to-end via Pi's additionalSkillPaths + appendSystemPrompt inlining.
+
+    The example-time-skill instructs the agent to format every timestamp as
+    ISO-8601 UTC. This agent has no tools, so it answers from its own
+    knowledge while obeying the skill's formatting rules.
+spec:
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-20250514
+  persona:
+    role: Helpful assistant
+    instructions: |
+      Answer the user's questions. Follow any skills loaded into your
+      context exactly.
+  task: |
+    Convert 3:00 PM US Pacific Standard Time on 14 March 2025 into UTC, and
+    state the resulting instant. Format every specific time you mention
+    exactly as the example-time-skill instructs.
+  tools: []
+  skills:
+    - name: example-time-skill
+    - name: using-superpowers
+  runtime:
+    type: local

@@ -1,0 +1,61 @@
+{
+  "name": "@agent-controller/runtime",
+  "version": "0.7.0",
+  "description": "Pi runtime adapter for agent-controller — runs an ADL CompiledSpec against a Pi session and emits the NDJSON wire-event stream.",
+  "keywords": [
+    "agent-controller",
+    "adl",
+    "pi",
+    "pi-agent",
+    "agent",
+    "ai-agents",
+    "llm",
+    "anthropic",
+    "runtime-adapter"
+  ],
+  "homepage": "https://github.com/CCDevelopForFun/agent-controller#readme",
+  "bugs": "https://github.com/CCDevelopForFun/agent-controller/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CCDevelopForFun/agent-controller.git",
+    "directory": "runtime"
+  },
+  "license": "MIT",
+  "author": "CCDevelopForFun",
+  "type": "module",
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "build": "tsc -p . && node ./scripts/copy-vendored-extensions.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "0.75.5",
+    "@earendil-works/pi-coding-agent": "0.75.5",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/core": "^2.8.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.219.0",
+    "@opentelemetry/resources": "^2.8.0",
+    "@opentelemetry/sdk-trace-base": "^2.8.0",
+    "@opentelemetry/sdk-trace-node": "^2.8.0",
+    "@opentelemetry/semantic-conventions": "^1.41.1",
+    "@sinclair/typebox": "0.34.49",
+    "pi-mcp-extension": "1.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "typescript": "latest",
+    "vitest": "latest"
+  }
+}

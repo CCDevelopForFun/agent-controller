@@ -1,0 +1,35 @@
+# Example: agent with OTel tracing enabled (slice 5.1+).
+#
+# Run with an OTLP collector reachable at OTEL_EXPORTER_OTLP_ENDPOINT.
+# Examples:
+#
+#   # Local OTel collector (otel/opentelemetry-collector-contrib container
+#   # running with an `otlphttp` receiver on port 4318):
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
+#     agentctl run examples/tracing-demo.yaml
+#
+#   # BrainTrust:
+#   OTEL_EXPORTER_OTLP_ENDPOINT=https://api.braintrust.dev/otel \
+#     OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer ${BRAINTRUST_API_KEY}" \
+#     agentctl run examples/tracing-demo.yaml
+#
+# The agentctl.run root span carries:
+#   - agent_controller.agent.name      = "tracing-demo"
+#   - agent_controller.runtime.type    = "local"
+#   - gen_ai.system                    = "anthropic"
+#   - gen_ai.request.model             = "claude-sonnet-4-20250514"
+#   - gen_ai.operation.name            = "agent.run"
+#
+# Adapter-side and per-tool spans land in slice 5.3 onward.
+
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata: { name: tracing-demo }
+spec:
+  model: { provider: anthropic, name: claude-sonnet-4-20250514 }
+  persona: { role: Helpful demo, instructions: Answer concisely. }
+  task: Say hello.
+  tools: []
+  runtime: { type: local }
+  observability:
+    tracing: true

@@ -1,0 +1,27 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: hello
+  owner: ccdevelopforfun
+  description: MVP hello-world agent
+spec:
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-20250514
+    temperature: 0.2
+  persona:
+    role: Helpful demo assistant
+    instructions: |
+      Greet the user and tell them the current time using the get_time tool.
+  task: |
+    Tell me the current UTC time.
+  tools:
+    - name: get_time
+  extensions:
+    - name: audit-log
+      config:
+        path: ./audit.log
+  skills:
+    - name: example-time-skill
+  runtime:
+    type: local

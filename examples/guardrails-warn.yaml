@@ -1,0 +1,35 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: guardrails-warn-demo
+  owner: ccdevelopforfun
+  description: |
+    Demonstrates warn mode for the hallucination detector. When the
+    model fabricates tool-call XML in its message body, the runtime:
+
+      1. Emits a `warning` wire event (NOT `error`).
+      2. Scrubs the fake XML from the `message` event so the
+         user-facing text reads cleanly.
+      3. Lets the session continue and end with reason=completed
+         (CLI exit 0).
+
+    Use this mode in development when you want to observe model
+    behavior under tool-shortage conditions without aborting the run.
+    Use `block` (the default) in production.
+
+spec:
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-20250514
+    temperature: 0.2
+  persona:
+    role: Demo agent without any tools
+    instructions: |
+      You have no tools. Always be honest about what you cannot do.
+  task: |
+    Look up the current weather in Tokyo and return the result as JSON.
+  tools: []
+  runtime:
+    type: local
+  guardrails:
+    hallucinationDetector: warn

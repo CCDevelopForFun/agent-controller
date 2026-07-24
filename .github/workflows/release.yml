@@ -1,0 +1,346 @@
+name: release
+
+# Triggers a release build when a version tag is pushed.
+# Builds cross-platform agentctl binaries, generates checksums, and uploads
+# them as GitHub Release assets. Tag format: vX.Y.Z (e.g. v0.2.0).
+#
+# Starting in v0.3.1, also publishes the runtime/ and runtime-opencode/
+# packages to npm as @agent-controller/runtime and
+# @agent-controller/runtime-opencode. The publish step is skipped when the
+# NPM_TOKEN repo secret is not set, so the workflow remains usable for
+# binary-only releases or forks without an npm scope.
+on:
+  push:
+    tags:
+      # GitHub Actions tag filters are GLOB patterns, not regex. `[0-9]+`
+      # matches a digit literally followed by `+`, not "one or more digits".
+      # `v*.*.*` matches the documented semver shape `vX.Y.Z` and prereleases
+      # like `v0.2.0-rc1`. Codex pass 1 of slice 2.7 caught this.
+      - 'v*.*.*'
+
+permissions:
+  contents: write   # needed to create the GitHub Release
+
+jobs:
+  build:
+    name: build agentctl ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: darwin,  goarch: arm64, runner: macos-latest,  artifact: agentctl-darwin-arm64 }
+          - { goos: darwin,  goarch: amd64, runner: macos-latest,  artifact: agentctl-darwin-amd64 }
+          - { goos: linux,   goarch: amd64, runner: ubuntu-latest, artifact: agentctl-linux-amd64 }
+          - { goos: linux,   goarch: arm64, runner: ubuntu-latest, artifact: agentctl-linux-arm64 }
+          - { goos: windows, goarch: amd64, runner: ubuntu-latest, artifact: agentctl-windows-amd64.exe }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+
+      - name: Build
+        working-directory: cli
+        env:
+          CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p ../dist
+          # Strip debug info to keep binaries small; embed the tag as the version.
+          go build \
+            -trimpath \
+            -ldflags="-s -w -X 'main.version=${GITHUB_REF_NAME}'" \
+            -o "../dist/${{ matrix.artifact }}" \
+            ./cmd/agentctl
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 7
+
+  test:
+    name: pre-release tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          # Node 22+ is required: Pi's nested undici (>=7) calls
+          # `webidl.util.markAsUncloneable` which was added in Node 22.
+          # On Node 20 the runtime/src/e2e/runsession-fake.test.ts fails
+          # at import time with `webidl.util.markAsUncloneable is not a
+          # function`. Discovered via the v0.2.0 release-workflow first run.
+          node-version: '22'
+      - name: Go tests
+        working-directory: cli
+        run: go test ./...
+      - name: Pi adapter tests
+        working-directory: runtime
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          # Build first: `npm test` in runtime/ is `vitest run` only, which
+          # transpiles via esbuild and silently tolerates TypeScript type
+          # errors. The release notes tell users to run `npm run build`, so
+          # type errors must block the release here. Codex pass 6 of slice 2.7.
+          npm run build
+          npm test
+      - name: opencode adapter tests
+        working-directory: runtime-opencode
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          # runtime-opencode/package.json's `npm test` already invokes `tsc`
+          # transitively (the build target is a vitest dependency), but be
+          # explicit here so the release fails fast on type errors.
+          npm run build
+          npm test
+
+  validate-npm-versions:
+    # Single preflight that validates EVERY publishable package's
+    # package.json version equals the release tag. Runs before publish-npm
+    # so a half-bumped release (e.g. runtime bumped, runtime-opencode not)
+    # blocks BOTH legs — without this, the matching leg would publish an
+    # immutable npm version before the mismatched leg failed. Codex pass 4
+    # of slice 4.1 caught this race.
+    name: validate npm package versions
+    needs: [test]
+    runs-on: ubuntu-latest
+    if: ${{ contains(github.ref_name, '-') == false }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check every publishable package
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          failed=0
+          for pkg in runtime runtime-opencode; do
+            PKG_VERSION="$(node -p "require('./$pkg/package.json').version")"
+            if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+              echo "::error::$pkg/package.json version ($PKG_VERSION) does not match release tag ($TAG_VERSION). Bump $pkg/package.json before tagging."
+              failed=1
+            fi
+          done
+          exit $failed
+
+  publish-npm:
+    # Publishes the two runtime adapter packages to npm. Runs in parallel
+    # with the `release` job. Depends on `build` + `test` + `validate-npm-
+    # versions` so a failed cross-platform binary build or a half-bumped
+    # package set blocks publish BEFORE any immutable npm artifact lands.
+    # The publish step is gated on NPM_TOKEN being set, so the job runs as
+    # a build-only no-op when the secret is absent (forks, binary-only
+    # releases). Pre-release tags (with a hyphen) skip the publish via the
+    # job-level `if:` — npm supports dist-tags but this workflow doesn't
+    # wire that yet; revisit when we cut our first -rc.
+    name: publish npm — ${{ matrix.pkg }}
+    needs: [build, test, validate-npm-versions]
+    runs-on: ubuntu-latest
+    if: ${{ contains(github.ref_name, '-') == false }}
+    # Job-level env so `env.NPM_TOKEN` is in scope when step-level `if:`
+    # conditions evaluate. Putting the secret inside step-level `env:` would
+    # be too late — Actions evaluates the `if` BEFORE it materializes the
+    # step's `env` block, so `env.NPM_TOKEN` would be unset there. Codex
+    # pass 1 of slice 4.1 caught this.
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    strategy:
+      fail-fast: false
+      matrix:
+        pkg: [runtime, runtime-opencode]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Build
+        working-directory: ${{ matrix.pkg }}
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run build
+
+      - name: Publish to npm (idempotent)
+        if: env.NPM_TOKEN != ''
+        working-directory: ${{ matrix.pkg }}
+        run: |
+          # Re-running the same release tag (e.g. after a downstream failure)
+          # must not blow up because npm immutability rejects republishing the
+          # same name@version. Probe the registry first and skip iff the exact
+          # version is already there. Codex pass 5 of slice 4.1 caught this.
+          PKG_NAME="$(node -p "require('./package.json').name")"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if npm view "$PKG_NAME@$PKG_VERSION" version >/dev/null 2>&1; then
+            echo "$PKG_NAME@$PKG_VERSION is already published — skipping (idempotent rerun)."
+          else
+            npm publish --access public
+          fi
+
+      - name: Skip publish (no NPM_TOKEN)
+        if: env.NPM_TOKEN == ''
+        run: |
+          echo "NPM_TOKEN is not set — skipping npm publish for ${{ matrix.pkg }}. Set the NPM_TOKEN repo secret to enable publishing."
+
+  release:
+    name: publish GitHub Release
+    # Wait for publish-npm so a failed publish can't leave a "latest" GitHub
+    # Release advertising packages that aren't on npm. Skipped publish-npm
+    # (prerelease tag) is OK — `!failure() && !cancelled()` lets the release
+    # run when predecessors succeed OR skip, but blocks it on failure.
+    # Codex pass 3 of slice 4.1 caught the race.
+    needs: [build, test, publish-npm]
+    if: ${{ !failure() && !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          # Place every artifact directly under `path` rather than the v4
+          # default `<path>/<artifact-name>/<file>` layout. Without this, our
+          # artifact names (which match the file basenames) collide with
+          # same-named directories and the move step below fails. Codex
+          # pass 3 of slice 2.7 caught this.
+          merge-multiple: true
+
+      - name: List downloaded binaries
+        run: ls -la dist
+
+      - name: Package schemas
+        run: |
+          (cd schemas && zip -r ../dist/schemas.zip adl.v1alpha1.json manifest.v1.json README.md)
+
+      - name: Generate checksums
+        working-directory: dist
+        run: |
+          # sha256 of every artifact; portable across platforms.
+          sha256sum agentctl-* schemas.zip > checksums.txt
+          cat checksums.txt
+
+      - name: Build release body
+        # Three bodies decided by two conditions:
+        #   - prerelease tag (hyphen) → publish-npm skipped → no-npm body
+        #   - NPM_TOKEN unset (fork / binary-only) → publish-npm skipped → no-npm body
+        #   - else (stable + token set) → full body with npm packages
+        # Codex pass 1+2 of slice 4.1 caught the original static body
+        # misleading users in both skip-cases.
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          # TAG_VERSION (no leading 'v') is interpolated into the stable
+          # branch's heredoc as `@${TAG_VERSION}` so install commands pin
+          # to the release tag's version, not whatever is on `latest` when
+          # someone reads an older release page. Codex pass 6 of slice 4.1.
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "${GITHUB_REF_NAME}" == *-* || -z "${NPM_TOKEN}" ]]; then
+            cat > /tmp/release_body.md <<'EOF'
+          ## What's in this release
+
+          ### GitHub Release assets
+
+          - `agentctl` binaries:
+            - `agentctl-darwin-arm64` (macOS Apple Silicon)
+            - `agentctl-darwin-amd64` (macOS Intel)
+            - `agentctl-linux-amd64`
+            - `agentctl-linux-arm64`
+            - `agentctl-windows-amd64.exe`
+          - `schemas.zip` — JSON Schemas (`adl.v1alpha1.json`, `manifest.v1.json`)
+          - `checksums.txt` — SHA-256 of every asset
+
+          ### npm packages
+
+          **This release does not include matching-version npm packages.** Either the tag is a pre-release (npm publish is skipped for hyphenated tags) or `NPM_TOKEN` was not configured on this repository. For source-clone installs the adapters under `runtime/` and `runtime-opencode/` build identically to the binaries above.
+
+          ## Install (source clone)
+
+          ```bash
+          git clone https://github.com/CCDevelopForFun/agent-controller.git
+          cd agent-controller
+          (cd runtime && npm install --ignore-scripts && npm run build)
+          (cd runtime-opencode && npm install --ignore-scripts && npm run build)
+          (cd cli && go build -o bin/agentctl ./cmd/agentctl)
+          ./cli/bin/agentctl run examples/hello.yaml
+          ```
+          EOF
+          else
+            # Unquoted heredoc so ${TAG_VERSION} expands here.
+            # User-side shell commands inside the body are escaped (\$(…))
+            # so they expand for the reader, not for the workflow.
+            cat > /tmp/release_body.md <<EOF
+          ## What's in this release (\`v${TAG_VERSION}\`)
+
+          ### GitHub Release assets
+
+          - \`agentctl\` binaries:
+            - \`agentctl-darwin-arm64\` (macOS Apple Silicon)
+            - \`agentctl-darwin-amd64\` (macOS Intel)
+            - \`agentctl-linux-amd64\`
+            - \`agentctl-linux-arm64\`
+            - \`agentctl-windows-amd64.exe\`
+          - \`schemas.zip\` — JSON Schemas (\`adl.v1alpha1.json\`, \`manifest.v1.json\`)
+          - \`checksums.txt\` — SHA-256 of every asset
+
+          ### npm packages (matching version)
+
+          - [\`@agent-controller/runtime@${TAG_VERSION}\`](https://www.npmjs.com/package/@agent-controller/runtime/v/${TAG_VERSION}) — Pi adapter
+          - [\`@agent-controller/runtime-opencode@${TAG_VERSION}\`](https://www.npmjs.com/package/@agent-controller/runtime-opencode/v/${TAG_VERSION}) — opencode adapter
+
+          ## Install
+
+          Self-contained install (downloaded \`agentctl\` + npm-installed adapter, version-pinned to this release):
+
+          \`\`\`bash
+          # 1) Download agentctl from this release and put it on PATH
+          # 2) Install the adapter(s) you need — pinned to this release's version
+          npm install -g @agent-controller/runtime@${TAG_VERSION}              # for runtime.type: local / local-pi
+          npm install -g @agent-controller/runtime-opencode@${TAG_VERSION}     # for runtime.type: local-opencode
+
+          # 3) Point agentctl at the adapter and run a spec
+          AGENT_CONTROLLER_RUNTIME="\$(npm root -g)/@agent-controller/runtime/dist/index.js" \\
+            agentctl run my-agent.yaml
+          \`\`\`
+
+          Source clone + build remains supported (and is the only path on forks without npm packages):
+
+          \`\`\`bash
+          git clone https://github.com/CCDevelopForFun/agent-controller.git
+          cd agent-controller
+          git checkout v${TAG_VERSION}
+          (cd runtime && npm install --ignore-scripts && npm run build)
+          (cd runtime-opencode && npm install --ignore-scripts && npm run build)
+          (cd cli && go build -o bin/agentctl ./cmd/agentctl)
+          ./cli/bin/agentctl run examples/hello.yaml
+          \`\`\`
+          EOF
+          fi
+          echo "--- generated body ---"
+          cat /tmp/release_body.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          # Treat tags containing a hyphen (e.g. v0.2.0-rc1, v0.2.0-beta.1) as
+          # prereleases so they don't replace the "latest" release on GitHub.
+          # Stable semver tags (v0.2.0) have no hyphen. Codex pass 7 of slice 2.7.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ contains(github.ref_name, '-') == false }}
+          body_path: /tmp/release_body.md
+          files: |
+            dist/agentctl-*
+            dist/schemas.zip
+            dist/checksums.txt

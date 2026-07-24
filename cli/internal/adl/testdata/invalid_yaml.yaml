@@ -1,0 +1,6 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: hello
+spec:
+  model: { provider: anthropic, name:

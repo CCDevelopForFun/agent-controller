@@ -1,0 +1,57 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: bash-allowlist-demo
+  owner: ccdevelopforfun
+  description: |
+    Demonstrates bash command allowlisting via @gotgenes/pi-permission-system.
+    Replaces the v0.1.x silent-no-op pattern of `spec.tools[].config` on
+    built-ins (now rejected at compile time by `agentctl compile`).
+spec:
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-20250514
+  persona:
+    role: A cautious shell helper.
+    instructions: |
+      You can run shell commands via the `bash` tool, but most commands are
+      restricted by policy. Read-only commands (`ls`, `cat`, `grep`, `git
+      status`, `git log`) are allowed. Anything destructive will be denied.
+  task: |
+    List the files in the current directory and show me what's in README.md.
+  tools:
+    # Pi built-in bash tool. NOTE: no `config:` block here — that pattern
+    # is rejected at compile time as of v0.1.11. Per-command policy lives
+    # on the extension below, where it's actually enforced.
+    - name: bash
+  extensions:
+    # Auto-installed at session start (since v0.1.6) via the source:npm:
+    # path. The `config:` block here is the permission map this extension
+    # expects — last-match-wins wildcard rules. See:
+    #   https://github.com/gotgenes/pi-packages/tree/main/packages/pi-permission-system
+    - name: pi-permission-system
+      source: npm:@gotgenes/pi-permission-system
+      config:
+        permission:
+          bash:
+            # NOTE: YAML key order is NOT preserved by `agentctl compile` —
+            # Go's encoding/json sorts map keys alphabetically. This policy
+            # is safe under alphabetical sort because `"*"` (ASCII 42)
+            # sorts FIRST, so under last-match-wins evaluation any specific
+            # allow below overrides the deny baseline. Allow-by-default
+            # patterns (specific deny refining a broader allow) would break
+            # — see README.md "Safety: restricting bash" for the explanation.
+            "*": deny
+            # Read-only commands the agent is trusted to run.
+            "ls": allow
+            "ls *": allow
+            "cat *": allow
+            "grep *": allow
+            "git status": allow
+            "git log": allow
+            "git log *": allow
+            # Risky-but-sometimes-useful: ask the operator interactively.
+            "git diff *": ask
+            "rm -rf *": deny
+  runtime:
+    type: local

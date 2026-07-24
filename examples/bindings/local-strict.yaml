@@ -1,0 +1,26 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: RuntimeBinding
+metadata:
+  name: local-strict
+  description: |
+    Strict variant of local-default. Same selector + target, but
+    target.strict: true means the capability matcher refuses to start
+    runs when any required capability isn't advertised. Use this when
+    you want fail-closed governance before v0.4 ships fail-closed as
+    the default on the Kubernetes target.
+spec:
+  selector:
+    runtimeType: local-pi
+    capabilities:
+      streaming: true
+      ephemeralFilesystem: false
+      sandbox: false
+      gpu: false
+      restrictedNetwork: false
+  target:
+    type: local
+    # Strict mode: any spec.runtime.requirement: true that this binding's
+    # capabilities map doesn't satisfy will cause `agentctl run` to exit
+    # non-zero BEFORE the session.started event. Compare to
+    # examples/bindings/local-default.yaml which warns and proceeds.
+    strict: true

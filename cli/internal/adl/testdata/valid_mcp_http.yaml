@@ -1,0 +1,18 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: mcp-http-agent
+spec:
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-20250514
+  task: |
+    Search for something.
+  tools: []
+  mcpServers:
+    - name: remote-server
+      transport: streamable-http
+      url: https://mcp.example.com/mcp
+      lifecycle: lazy
+  runtime:
+    type: local

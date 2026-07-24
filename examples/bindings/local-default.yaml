@@ -1,0 +1,33 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: RuntimeBinding
+metadata:
+  name: local-default
+  description: |
+    Default local-execution binding for v0.3.2. Mirrors today's behavior
+    (subprocess dispatch via the cwd-relative runtime adapter) — provided
+    here so the runtime-binding resolve loop has a concrete target before
+    v0.4 ships remote backends like Kubernetes / Databricks / AgentCore.
+spec:
+  selector:
+    # Match any Agent declaring runtime.type: local-pi.
+    # Use separate bindings (e.g. local-default-opencode.yaml) for the
+    # other adapters; selectors don't yet support multi-value runtimeType.
+    runtimeType: local-pi
+    # Capabilities this binding's target provides. The Pi adapter today
+    # is single-process / local-filesystem / no-sandbox / no-gpu. v0.3.3
+    # (Backend.Resolve) will require every `true` requirement on the
+    # Agent's spec.runtime.requirements to also be `true` here, so
+    # Bindings should only advertise capabilities the target actually
+    # delivers.
+    capabilities:
+      streaming: true            # NDJSON wire-event stream is always on
+      ephemeralFilesystem: false # Pi runs in the user's real cwd
+      sandbox: false
+      gpu: false
+      restrictedNetwork: false
+  target:
+    type: local
+    # runtimeCommand is optional; omitting it means the resolver falls
+    # through to the CLI's default lookup (<cwd>/runtime/dist/index.js)
+    # exactly as agentctl does today. Set it to point at a custom-built
+    # adapter binary for local development of forks.
