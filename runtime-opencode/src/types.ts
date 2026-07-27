@@ -117,7 +117,7 @@ export interface RuntimeConfig {
    * routes to the opencode adapter (runtime-opencode/), added in v0.2
    * slice 2.1. Mirror of the enum in schemas/adl.v1alpha1.json.
    */
-  type: "local" | "local-pi" | "local-opencode";
+  type: "local" | "local-pi" | "local-opencode" | "local-codex" | "local-claude";
   /**
    * v0.3.1 additive field: free-form capability requirements the runtime
    * must satisfy. Boolean flags consumed in two steps: v0.3.2 adds the
