@@ -27,7 +27,18 @@ describe("translateSdkMessage", () => {
     );
     expect(r.events).toHaveLength(1);
     expect(r.events[0].type).toBe("message");
-    expect(r.events[0].data).toMatchObject({ role: "assistant", content: "hi" });
+    expect(r.events[0].data).toMatchObject({ role: "assistant", text: "hi" });
+  });
+
+  it("uses `text` (not `content`) as the message payload key, matching the other adapters", () => {
+    const st = createTranslatorState();
+    const r = translateSdkMessage(
+      { type: "assistant", session_id: "sdk-1", message: { content: [{ type: "text", text: "hi" }] } },
+      SID,
+      st,
+      "block",
+    );
+    expect(r.events[0].data).toEqual({ role: "assistant", text: "hi" });
   });
 
   it("emits tool.call for each tool_use block", () => {

@@ -103,9 +103,9 @@ export function translateSdkMessage(
               message: "fabricated tool-call XML scrubbed from assistant message",
             }),
           );
-          events.push(stamp(sessionId, "message", { role: "assistant", content: scrubbed }));
+          events.push(stamp(sessionId, "message", { role: "assistant", text: scrubbed }));
         } else {
-          events.push(stamp(sessionId, "message", { role: "assistant", content: text }));
+          events.push(stamp(sessionId, "message", { role: "assistant", text }));
         }
       }
 
