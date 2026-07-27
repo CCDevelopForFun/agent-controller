@@ -116,6 +116,42 @@ describe("translateSdkMessage", () => {
     expect(st.ended).toBe(true);
   });
 
+  it("routes a success-subtype error result (auth failure shape) to error + session.ended, and never reports kind: success", () => {
+    const st = createTranslatorState();
+    const r = translateSdkMessage(
+      {
+        type: "result",
+        subtype: "success",
+        is_error: true,
+        result: "Not logged in · Please run /login",
+        session_id: "sdk-1",
+      },
+      SID,
+      st,
+      "block",
+    );
+    expect(r.events.map((e) => e.type)).toEqual(["error", "session.ended"]);
+    expect(r.events[1].data).toMatchObject({ reason: "error" });
+    expect(r.fatal).toBe(true);
+    expect(st.ended).toBe(true);
+    expect(r.events[0].data).toMatchObject({ kind: "error" });
+    expect((r.events[0].data as { kind: string }).kind).not.toBe("success");
+  });
+
+  it("still takes the completed path for subtype success with is_error false", () => {
+    const st = createTranslatorState();
+    const r = translateSdkMessage(
+      { type: "result", subtype: "success", is_error: false, result: "done", session_id: "sdk-1" },
+      SID,
+      st,
+      "block",
+    );
+    expect(r.events.map((e) => e.type)).toEqual(["session.ended"]);
+    expect(r.events[0].data).toMatchObject({ reason: "completed" });
+    expect(r.fatal).toBeFalsy();
+    expect(st.ended).toBe(true);
+  });
+
   it("blocks hallucinated tool-call XML in block mode", () => {
     const st = createTranslatorState();
     const r = translateSdkMessage(

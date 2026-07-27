@@ -155,10 +155,17 @@ export function translateSdkMessage(
       state.ended = true;
       const isError = Boolean(m.is_error) || m.subtype !== "success";
       if (isError) {
+        // `subtype` can be the literal "success" even when `is_error` is what
+        // triggered this branch (e.g. an auth failure: the SDK reports
+        // subtype "success" alongside is_error: true). `kind` must describe
+        // the error, never echo "success" — fall back to the generic "error"
+        // constant in that case and pass genuine error subtypes through.
+        const subtype = typeof m.subtype === "string" ? m.subtype : undefined;
+        const kind = subtype && subtype !== "success" ? subtype : "error";
         return {
           events: [
             stamp(sessionId, "error", {
-              kind: String(m.subtype ?? "error"),
+              kind,
               message: String(m.result ?? "session failed"),
             }),
             stamp(sessionId, "session.ended", { reason: "error" }),
