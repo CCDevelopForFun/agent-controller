@@ -367,9 +367,10 @@ func newRunCmd() *cobra.Command {
 				// time. So injecting the workspace server would silently
 				// drop a Pi agent's declared built-in tools. Warn rather
 				// than fail (the agent may not need those built-ins). The
-				// opencode adapter grants each declared tool independently
-				// and is unaffected.
-				isPiAdapter := spec.Runtime.Type != "local-opencode" && spec.Runtime.Type != "local-codex"
+				// opencode and claude adapters grant each declared tool
+				// independently (claude via the SDK's `allowedTools`) and
+				// are unaffected.
+				isPiAdapter := spec.Runtime.Type != "local-opencode" && spec.Runtime.Type != "local-codex" && spec.Runtime.Type != "local-claude"
 				if isPiAdapter {
 					builtins := declaredBuiltinTools(&spec)
 					if len(builtins) > 0 {
