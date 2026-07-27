@@ -115,6 +115,78 @@ if [[ "$ADAPTER" == "claude" ]]; then
   echo "==> running (live, adapter=claude, spec=examples/hello-claude.yaml)"
   export AGENT_CONTROLLER_RUNTIME="$PWD/runtime-claude/dist/index.js"
   cli/bin/agentctl run examples/hello-claude.yaml
+
+  # ── live tool-execution tier ────────────────────────────────────────────────
+  #
+  # !!! AUTHORED BUT NEVER EXECUTED !!!
+  # This block was written during the pre-merge review fix wave on a machine
+  # with no ANTHROPIC_API_KEY, so it has never been run against a real model.
+  # Everything below is derived from behavior that WAS verified without a key
+  # (the SDK's `system`/`init` message reports the exact tool list it was given,
+  # and e2e/fake-mcp-server.mjs was smoke-tested standalone over stdio), but the
+  # assertions themselves are unproven. Expect to debug them on first run.
+  #
+  # Why it exists: the three Critical defects found in review (allowlist not
+  # enforced, N session.started per session, session ids not bridged) all
+  # survived six task-level reviews because no test — hermetic or live — ever
+  # executed a tool. The hermetic tier covers rejection paths only, and the
+  # live tier above runs a tool-free hello.
+
+  echo "==> live tool tier 1/2: declared tools are the only tools"
+  cli/bin/agentctl run e2e/claude-live-tools.yaml --raw-out /tmp/claude-tools.ndjson >/dev/null
+
+  # Exactly one session.started per session. `case "system"` used to match all
+  # 28 system subtypes, so a single session emitted one per system message.
+  started="$(grep -c '"type":"session.started"' /tmp/claude-tools.ndjson || true)"
+  if [[ "$started" != "1" ]]; then
+    echo "FAIL: expected exactly 1 session.started, got ${started}" >&2
+    cat /tmp/claude-tools.ndjson >&2; exit 1
+  fi
+
+  # The spec declares `tools: [read]`. Bash must never appear: before the fix,
+  # spec.tools[] went to Options.allowedTools (auto-approval) instead of
+  # Options.tools (the restriction), leaving the full default toolset live.
+  if grep '"type":"tool.call"' /tmp/claude-tools.ndjson | grep -q '"toolName":"Bash"'; then
+    echo "FAIL: Bash tool.call emitted for a spec declaring only tools: [read]" >&2
+    cat /tmp/claude-tools.ndjson >&2; exit 1
+  fi
+
+  # Positive half — without it "no Bash" passes trivially when the agent calls
+  # no tools at all, which is exactly the hole that let the defect through.
+  if ! grep '"type":"tool.call"' /tmp/claude-tools.ndjson | grep -q '"toolName":"Read"'; then
+    echo "FAIL: expected a Read tool.call; the granted tool never executed" >&2
+    cat /tmp/claude-tools.ndjson >&2; exit 1
+  fi
+  grep -q 'AGENTCTL_E2E_READ_SENTINEL_4b7ad2' /tmp/claude-tools.ndjson || {
+    echo "FAIL: Read tool.result did not carry the fixture sentinel" >&2
+    cat /tmp/claude-tools.ndjson >&2; exit 1
+  }
+  echo "ok (exactly one session.started; Read granted, Bash absent)"
+
+  echo "==> live tool tier 2/2: a declared MCP tool actually executes"
+  # e2e/fake-mcp-server.mjs is a local stdio MCP server — no network, no npx
+  # download. Reaching the sentinel proves spec.mcpServers[] became
+  # Options.mcpServers AND the `mcp__<server>` allow rule auto-approved the
+  # call; without that rule the SDK raises "canUseTool callback is not
+  # provided." instead of executing.
+  cli/bin/agentctl run e2e/claude-live-mcp.yaml --raw-out /tmp/claude-mcp.ndjson >/dev/null
+
+  started="$(grep -c '"type":"session.started"' /tmp/claude-mcp.ndjson || true)"
+  if [[ "$started" != "1" ]]; then
+    echo "FAIL: expected exactly 1 session.started, got ${started}" >&2
+    cat /tmp/claude-mcp.ndjson >&2; exit 1
+  fi
+  grep '"type":"tool.call"' /tmp/claude-mcp.ndjson | grep -q 'echo_sentinel' || {
+    echo "FAIL: no tool.call for the declared MCP tool" >&2
+    cat /tmp/claude-mcp.ndjson >&2; exit 1
+  }
+  grep '"type":"tool.result"' /tmp/claude-mcp.ndjson | grep -q 'AGENTCTL_E2E_MCP_SENTINEL_9f21c4' || {
+    echo "FAIL: MCP tool.result did not carry the sentinel — the tool did not execute" >&2
+    cat /tmp/claude-mcp.ndjson >&2; exit 1
+  }
+  rm -f /tmp/claude-tools.ndjson /tmp/claude-mcp.ndjson
+  echo "ok (declared MCP tool executed)"
+
   echo "ok (adapter=claude, live)"
   exit 0
 fi
