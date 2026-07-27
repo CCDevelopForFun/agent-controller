@@ -7,8 +7,8 @@ cd "$(dirname "$0")/.."
 #   ADAPTER=opencode AGENT_CONTROLLER_RUN_LIVE=1 ANTHROPIC_API_KEY=... ./e2e/run.sh
 ADAPTER="${ADAPTER:-pi}"
 case "$ADAPTER" in
-  pi|opencode|codex) ;;
-  *) echo "ADAPTER must be 'pi', 'opencode', or 'codex' (got: $ADAPTER)" >&2; exit 2 ;;
+  pi|opencode|codex|claude) ;;
+  *) echo "ADAPTER must be 'pi', 'opencode', 'codex', or 'claude' (got: $ADAPTER)" >&2; exit 2 ;;
 esac
 
 # ── codex hermetic tier ────────────────────────────────────────────────────────
@@ -67,6 +67,57 @@ if [[ "$ADAPTER" == "codex" ]]; then
   # Fall through to the shared live-run block below.
 fi
 
+# ── claude hermetic tier ───────────────────────────────────────────────────────
+# ADAPTER=claude runs hermetically by default: it exercises the compile-time
+# rejection path and the adapter's own unsupported-spec path, neither of which
+# needs a model. No PATH shim is required — the Claude Agent SDK ships its own
+# executable, unlike the opencode and codex CLIs. The live tier is gated behind
+# AGENT_CONTROLLER_RUN_LIVE=1 + ANTHROPIC_API_KEY.
+if [[ "$ADAPTER" == "claude" ]]; then
+  echo "==> building runtime-claude"
+  (cd runtime-claude && npm run build)
+
+  echo "==> building cli"
+  (cd cli && go build -o bin/agentctl ./cmd/agentctl)
+
+  echo "==> validate + compile examples/hello-claude.yaml"
+  cli/bin/agentctl validate examples/hello-claude.yaml
+  cli/bin/agentctl compile examples/hello-claude.yaml >/dev/null
+
+  echo "==> compile must reject provider openai on local-claude"
+  tmpspec="$(mktemp -t claude-bad-XXXXXX).yaml"
+  sed -e 's/provider: anthropic/provider: openai/' \
+      -e 's/name: claude-opus-4-6/name: gpt-5.5/' \
+      examples/hello-claude.yaml > "$tmpspec"
+  if cli/bin/agentctl compile "$tmpspec" >/dev/null 2>&1; then
+    echo "FAIL: expected compile to reject provider openai on local-claude" >&2
+    rm -f "$tmpspec"; exit 1
+  fi
+  rm -f "$tmpspec"
+  echo "ok (compile rejects non-anthropic provider)"
+
+  if [[ "${AGENT_CONTROLLER_RUN_LIVE:-0}" != "1" ]]; then
+    echo "==> adapter rejects an unsupported spec on stdin"
+    out="$(echo '{"v":1,"metadata":{"name":"t"},"model":{"provider":"openai","name":"gpt-5.5"},"task":"hi","tools":[],"extensions":[],"skills":[],"runtime":{"type":"local-claude"}}' \
+      | node runtime-claude/dist/index.js || true)"
+    echo "$out" | grep -q '"type":"error"' || { echo "FAIL: expected an error event" >&2; exit 1; }
+    echo "$out" | grep -q 'spec.model.provider' || { echo "FAIL: error must name the field" >&2; exit 1; }
+    echo "ok (adapter=claude, hermetic)"
+    exit 0
+  fi
+
+  if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+    echo "ADAPTER=claude AGENT_CONTROLLER_RUN_LIVE=1 set but ANTHROPIC_API_KEY is empty. Aborting." >&2
+    exit 1
+  fi
+
+  echo "==> running (live, adapter=claude, spec=examples/hello-claude.yaml)"
+  export AGENT_CONTROLLER_RUNTIME="$PWD/runtime-claude/dist/index.js"
+  cli/bin/agentctl run examples/hello-claude.yaml
+  echo "ok (adapter=claude, live)"
+  exit 0
+fi
+
 if [[ "${AGENT_CONTROLLER_RUN_LIVE:-0}" != "1" ]]; then
   echo "Live E2E skipped: set AGENT_CONTROLLER_RUN_LIVE=1 and ANTHROPIC_API_KEY to exercise the real LLM path."
   echo ""
@@ -79,6 +130,8 @@ if [[ "${AGENT_CONTROLLER_RUN_LIVE:-0}" != "1" ]]; then
   echo "                        docs/architecture/harness-matrix.md, Phase 2 follow-up #1)"
   echo "  - codex adapter:     ADAPTER=codex ./e2e/run.sh"
   echo "                       (hermetic fake-codex shim covers the full adapter pipeline)"
+  echo "  - claude adapter:    ADAPTER=claude ./e2e/run.sh"
+  echo "                       (hermetic: compile rejection + adapter rejection paths)"
   exit 0
 fi
 
