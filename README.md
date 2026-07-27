@@ -2,7 +2,7 @@
 
 > **Declarative runtime for AI agents.** Define agents in YAML (ADL — Agent Definition Language). Run the same spec on the Pi, opencode, codex, or claude runtime through a consistent backend interface.
 
-Agent Controller separates **agent intent** (model, persona, tools, skills, MCP servers, guardrails, observability) from **execution substrate**. A spec that sticks to the cross-adapter feature set (persona, skills, MCP servers, guardrails) runs on the Pi, opencode, codex, or claude adapter by changing one field — `runtime.type`. Specs that use Pi-only capabilities (custom Pi-extension tools like `get_time`, `spec.extensions[]`, subagents) are Pi-only — opencode and codex reject them at startup. The codex adapter additionally requires `model.provider: openai` (anthropic and google are rejected). Remote backends, like the Kubernetes target (a schema-level skeleton today), attach via a `RuntimeBinding`. Full [capability matrix](docs/architecture/harness-matrix.md).
+Agent Controller separates **agent intent** (model, persona, tools, skills, MCP servers, guardrails, observability) from **execution substrate**. A spec that sticks to the cross-adapter feature set (persona, skills, MCP servers, guardrails) runs on the Pi, opencode, codex, or claude adapter by changing one field — `runtime.type`. Specs that use Pi-only capabilities (custom Pi-extension tools like `get_time`, `spec.extensions[]`) are Pi-only — opencode, codex, and claude reject them at startup. `spec.subagents[]` works on Pi, opencode, and claude, but is rejected by codex. Two adapters pin the provider: codex requires `model.provider: openai` (anthropic and google are rejected), and claude requires `model.provider: anthropic` (openai and google are rejected). Remote backends, like the Kubernetes target (a schema-level skeleton today), attach via a `RuntimeBinding`. Full [capability matrix](docs/architecture/harness-matrix.md).
 
 ```bash
 agentctl run  examples/hello.yaml           # Pi adapter
@@ -201,7 +201,7 @@ Supported transports: `stdio`, `streamable-http`, `sse`. See [`examples/mcp-time
 
 ## Chat & sessions
 
-`agentctl chat` opens an interactive REPL on any adapter (`runtime.type: local` / `local-pi` / `local-opencode` / `local-codex`). Sessions persist across process restarts via SQLite; pick up where you left off with `--resume`.
+`agentctl chat` opens an interactive REPL on any adapter (`runtime.type: local` / `local-pi` / `local-opencode` / `local-codex` / `local-claude`). Sessions persist across process restarts via SQLite; pick up where you left off with `--resume`.
 
 ```bash
 agentctl chat examples/hello.yaml               # start a session
