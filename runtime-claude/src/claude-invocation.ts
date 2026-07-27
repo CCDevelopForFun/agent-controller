@@ -94,8 +94,10 @@ const BUILTIN_TOOL_MAP: Record<string, string> = {
  * instructions, then each skill body wrapped via wrapSkillBody(). The spec's
  * `task` is NOT included here — it is the `prompt` argument to query().
  *
- * Section order matches runtime-codex/src/codex-invocation.ts::buildPrompt so
- * the four adapters compose prompts identically.
+ * The persona/skills section order matches
+ * runtime-codex/src/codex-invocation.ts::buildPrompt; codex additionally
+ * appends `spec.task` as a final section, which this adapter deliberately
+ * omits since `task` is passed separately to query().
  */
 export function buildPrompt(spec: CompiledSpec, skills: SkillBody[]): string {
   const sections: string[] = [HONESTY_PREAMBLE];
@@ -131,20 +133,42 @@ export function buildSubagents(bodies: SubagentBody[]): Record<string, AgentDefi
   return out;
 }
 
-/** Map one ADL MCPServer onto the SDK's McpServerConfig union. */
+/**
+ * Map one ADL MCPServer onto the SDK's McpServerConfig union.
+ *
+ * schemas/adl.v1alpha1.json already requires `command` for stdio servers and
+ * `url` for http/sse servers, so a spec that passed `agentctl validate`
+ * cannot reach the throws below. This is defense-in-depth for hand-crafted
+ * CompiledSpecs that bypass the compiler (see assertClaudeCompatible above
+ * for the same posture) — mirrors runtime-opencode/src/opencode-config.ts's
+ * stdio/http field checks so a missing field fails loudly and names the
+ * offending server and field, instead of silently producing an empty-string
+ * command/url that only surfaces as an opaque SDK error much later.
+ */
 function toMcpServerConfig(srv: MCPServer): McpServerConfig {
   switch (srv.transport) {
     case "stdio":
+      if (!srv.command) {
+        throw new Error(
+          `runtime-claude: MCP server "${srv.name}" uses transport "stdio" but has no command field.`,
+        );
+      }
       return {
         type: "stdio",
-        command: srv.command ?? "",
+        command: srv.command,
         args: srv.args,
         env: srv.env,
       };
     case "streamable-http":
-      return { type: "http", url: srv.url ?? "", headers: srv.headers };
     case "sse":
-      return { type: "sse", url: srv.url ?? "", headers: srv.headers };
+      if (!srv.url) {
+        throw new Error(
+          `runtime-claude: MCP server "${srv.name}" uses transport "${srv.transport}" but has no url field.`,
+        );
+      }
+      return srv.transport === "streamable-http"
+        ? { type: "http", url: srv.url, headers: srv.headers }
+        : { type: "sse", url: srv.url, headers: srv.headers };
   }
 }
 

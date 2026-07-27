@@ -146,6 +146,18 @@ describe("buildOptions", () => {
     expect(o.mcpServers!.s).toEqual({ type: "sse", url: "https://x/sse", headers: undefined });
   });
 
+  it("throws a descriptive error for a stdio server with no command", () => {
+    const s = baseSpec({ mcpServers: [{ name: "broken", transport: "stdio" }] });
+    expect(() => buildOptions(s, "sys", {})).toThrow(/broken/);
+    expect(() => buildOptions(s, "sys", {})).toThrow(/command/);
+  });
+
+  it("throws a descriptive error for a streamable-http server with no url", () => {
+    const s = baseSpec({ mcpServers: [{ name: "remote", transport: "streamable-http" }] });
+    expect(() => buildOptions(s, "sys", {})).toThrow(/remote/);
+    expect(() => buildOptions(s, "sys", {})).toThrow(/url/);
+  });
+
   it("passes resume through when sessionId is set", () => {
     const o = buildOptions(baseSpec({ sessionId: "abc-123" }), "sys", {});
     expect(o.resume).toBe("abc-123");
