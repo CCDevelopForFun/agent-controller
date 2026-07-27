@@ -13,7 +13,12 @@
  * Wire protocol contract: cli/internal/wire/events.go
  */
 
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import type { Options } from "@anthropic-ai/claude-agent-sdk";
 import type { CompiledSpec, HallucinationMode } from "./types.js";
 import { emit, stamp } from "./wire.js";
 import {
@@ -21,11 +26,56 @@ import {
   buildOptions,
   buildPrompt,
   buildSubagents,
+  deriveSdkSessionUuid,
 } from "./claude-invocation.js";
 import { readSkillBodies, readSubagentBodies } from "./registry.js";
 import { createTranslatorState, translateSdkMessage } from "./event-translator.js";
 
 const write = (s: string): void => void process.stdout.write(s);
+
+// ── SDK session-id persistence ────────────────────────────────────────────────
+//
+// The adapter is a fresh process per turn (cli/internal/serve/run_turn.go and
+// cli/cmd/agentctl/chat.go both re-dispatch with spec.SessionID set), so
+// "have I seen this agentctl session before?" cannot live in memory. Mirrors
+// runtime-codex's `$CODEX_HOME/.agentctl-thread-id` file.
+//
+// The directory is keyed by the derived UUID rather than the raw agentctl id
+// so no unvalidated spec string ever reaches a path component.
+
+const SDK_SESSION_ID_FILENAME = "sdk-session-id";
+
+function sdkSessionStateDir(derivedUuid: string): string {
+  const base = process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share");
+  return join(base, "agent-controller", "claude-sessions", derivedUuid);
+}
+
+/** Read the SDK session id captured on a previous turn, if any. */
+function readPersistedSdkSessionId(dir: string): string | undefined {
+  const file = join(dir, SDK_SESSION_ID_FILENAME);
+  if (!existsSync(file)) return undefined;
+  try {
+    return readFileSync(file, "utf8").trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Persist the SDK session id for the next turn. Non-fatal on failure: the
+ * next turn falls back to the deterministic first-turn id.
+ */
+function persistSdkSessionId(dir: string, sdkSessionId: string): void {
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    writeFileSync(join(dir, SDK_SESSION_ID_FILENAME), sdkSessionId, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+  } catch {
+    // Non-fatal.
+  }
+}
 
 /** Generate a short wire sessionId: "s_" + 8 base-36 chars. */
 function makeSessionId(): string {
@@ -84,12 +134,36 @@ async function main(): Promise<void> {
 
   const root = process.cwd();
   const mode = resolveHallucinationMode(spec);
-  const skills = readSkillBodies(root, spec.skills ?? []);
-  const subagentBodies = readSubagentBodies(root, spec.subagents ?? []);
 
-  const systemPrompt = buildPrompt(spec, skills);
-  const subagents = buildSubagents(subagentBodies);
-  const options = buildOptions(spec, systemPrompt, subagents);
+  // buildOptions() throws with a field-naming message for specs it cannot map
+  // (malformed MCP entries, an unmapped built-in tool, a blank sessionId), and
+  // deriveSdkSessionUuid() throws for the same reason. Both are spec problems,
+  // not runtime failures, so they get the same rejection shape as
+  // assertClaudeCompatible rather than an unhandled rejection.
+  let options: Options;
+  let sessionStateDir: string | undefined;
+  try {
+    const skills = readSkillBodies(root, spec.skills ?? []);
+    const subagentBodies = readSubagentBodies(root, spec.subagents ?? []);
+    const systemPrompt = buildPrompt(spec, skills);
+    const subagents = buildSubagents(subagentBodies);
+
+    let resumeSdkSessionId: string | undefined;
+    if (spec.sessionId) {
+      sessionStateDir = sdkSessionStateDir(deriveSdkSessionUuid(spec.sessionId));
+      resumeSdkSessionId = readPersistedSdkSessionId(sessionStateDir);
+    }
+
+    options = buildOptions(spec, systemPrompt, subagents, resumeSdkSessionId);
+  } catch (err) {
+    emit(write, stamp(sessionId, "error", {
+      kind: "unsupported_spec",
+      message: err instanceof Error ? err.message : String(err),
+    }));
+    emit(write, stamp(sessionId, "session.ended", { reason: "error" }));
+    process.exitCode = 1;
+    return;
+  }
 
   if (spec.model.temperature !== undefined) {
     process.stderr.write(
@@ -117,6 +191,13 @@ async function main(): Promise<void> {
     }
     process.exitCode = 1;
     return;
+  } finally {
+    // Record the SDK's own session id so the next turn resumes it instead of
+    // starting over. Runs on the error and fatal paths too — the transcript
+    // exists either way, and losing the id would silently fork the session.
+    if (sessionStateDir && state.sdkSessionId) {
+      persistSdkSessionId(sessionStateDir, state.sdkSessionId);
+    }
   }
 
   if (!state.ended) {

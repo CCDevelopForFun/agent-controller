@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { assertClaudeCompatible, buildPrompt, buildOptions, buildSubagents } from "./claude-invocation.js";
+import {
+  assertClaudeCompatible,
+  buildPrompt,
+  buildOptions,
+  buildSubagents,
+  deriveSdkSessionUuid,
+} from "./claude-invocation.js";
 import { HONESTY_PREAMBLE } from "./honesty.js";
 import type { CompiledSpec } from "./types.js";
 
@@ -240,13 +246,36 @@ describe("buildOptions", () => {
     expect(() => buildOptions(s, "sys", {})).toThrow(/url/);
   });
 
-  it("passes resume through when sessionId is set", () => {
-    const o = buildOptions(baseSpec({ sessionId: "abc-123" }), "sys", {});
-    expect(o.resume).toBe("abc-123");
+  // The agentctl session id is NOT an SDK session id: `agentctl serve` mints
+  // `s_<base36ms><8hex>` and `agentctl chat` mints `s_<hex>`, while
+  // Options.sessionId "Must be a valid UUID" and Options.resume expects an id
+  // the SDK issued. Passing the raw id to `resume` failed on turn 1 of every
+  // serve/chat session.
+  it("sets a derived UUID sessionId on the first turn, never the raw agentctl id", () => {
+    const o = buildOptions(baseSpec({ sessionId: "s_mfaq1x2y3z4a5b6c" }), "sys", {});
+    expect(o.sessionId).toBe(deriveSdkSessionUuid("s_mfaq1x2y3z4a5b6c"));
+    expect(o.sessionId).not.toBe("s_mfaq1x2y3z4a5b6c");
+    expect(o.resume).toBeUndefined();
   });
 
-  it("omits resume when sessionId is absent", () => {
-    expect(buildOptions(baseSpec(), "sys", {}).resume).toBeUndefined();
+  it("resumes the SDK session id captured on a previous turn", () => {
+    const prior = "11111111-2222-5333-8444-555555555555";
+    const o = buildOptions(baseSpec({ sessionId: "s_abc" }), "sys", {}, prior);
+    expect(o.resume).toBe(prior);
+    // The SDK forbids sessionId and resume together (sdk.d.ts:1804-1809).
+    expect(o.sessionId).toBeUndefined();
+  });
+
+  it("sets neither sessionId nor resume for a one-shot run", () => {
+    const o = buildOptions(baseSpec(), "sys", {});
+    expect(o.resume).toBeUndefined();
+    expect(o.sessionId).toBeUndefined();
+  });
+
+  it("rejects a blank sessionId and names the field", () => {
+    expect(() => buildOptions(baseSpec({ sessionId: "   " }), "sys", {})).toThrow(
+      /spec\.sessionId/,
+    );
   });
 
   it("registers subagents when provided", () => {
@@ -257,6 +286,33 @@ describe("buildOptions", () => {
 
   it("omits agents when none are declared", () => {
     expect(buildOptions(baseSpec(), "sys", {}).agents).toBeUndefined();
+  });
+});
+
+describe("deriveSdkSessionUuid", () => {
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+  it("produces a syntactically valid v5 UUID", () => {
+    expect(deriveSdkSessionUuid("s_mfaq1x2y3z4a5b6c")).toMatch(UUID_RE);
+    expect(deriveSdkSessionUuid("s_deadbeef")).toMatch(UUID_RE);
+  });
+
+  it("is deterministic — the same agentctl id always maps to the same UUID", () => {
+    const a = deriveSdkSessionUuid("s_abc");
+    const b = deriveSdkSessionUuid("s_abc");
+    expect(a).toBe(b);
+    // Pinned so an accidental change to the namespace or hash input is caught:
+    // a drifting derivation would silently orphan every existing session.
+    expect(a).toBe("c3dcb283-cfda-52bd-b6d0-d5abb2f76986");
+  });
+
+  it("maps different agentctl ids to different UUIDs", () => {
+    expect(deriveSdkSessionUuid("s_abc")).not.toBe(deriveSdkSessionUuid("s_abd"));
+  });
+
+  it("throws naming spec.sessionId for an empty or blank id", () => {
+    expect(() => deriveSdkSessionUuid("")).toThrow(/spec\.sessionId/);
+    expect(() => deriveSdkSessionUuid("  \t ")).toThrow(/spec\.sessionId/);
   });
 });
 

@@ -6,9 +6,60 @@
  * model or an SDK session.
  */
 
+import { createHash } from "node:crypto";
 import type { AgentDefinition, McpServerConfig, Options } from "@anthropic-ai/claude-agent-sdk";
 import type { CompiledSpec, MCPServer, ResolvedRef } from "./types.js";
 import { HONESTY_PREAMBLE, wrapSkillBody } from "./honesty.js";
+
+/**
+ * Namespace for the agentctl-session-id -> SDK-session-UUID derivation.
+ *
+ * Itself UUIDv5(DNS, "agent-controller.dev"), so the constant is reproducible
+ * from a documented input rather than being an arbitrary blob.
+ */
+const CLAUDE_SESSION_NAMESPACE = "0b66266c-ec3e-5b64-841f-aae1422cf01f";
+
+/**
+ * RFC 4122 §4.3 name-based UUID (SHA-1 / version 5), implemented locally so
+ * the adapter takes no dependency for sixteen bytes of hashing.
+ */
+function uuidV5(namespace: string, name: string): string {
+  const nsBytes = Buffer.from(namespace.replace(/-/g, ""), "hex");
+  const digest = createHash("sha1").update(nsBytes).update(Buffer.from(name, "utf8")).digest();
+  const b = Buffer.from(digest.subarray(0, 16));
+  b[6] = (b[6] & 0x0f) | 0x50; // version 5
+  b[8] = (b[8] & 0x3f) | 0x80; // RFC 4122 variant
+  const h = b.toString("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
+/**
+ * Bridge an agentctl session id onto an SDK-native session id.
+ *
+ * `spec.sessionId` is an agentctl-owned opaque key, not something the SDK
+ * minted: `agentctl serve` generates `s_<base36ms><8hex>`
+ * (cli/internal/serve/manager.go) and `agentctl chat` generates `s_<hex>`
+ * (cli/cmd/agentctl/chat.go). `Options.sessionId` "Must be a valid UUID"
+ * (sdk.d.ts:1804-1809) and `Options.resume` expects an id the SDK itself
+ * issued, so passing the agentctl id to either is a category error.
+ *
+ * The mapping is deterministic — same agentctl id always yields the same UUID
+ * — so a later turn can find the same SDK session without carrying state.
+ * The sibling adapters take the same posture of treating `spec.sessionId` as
+ * an opaque key and deriving backend-native storage from it
+ * (runtime-codex/src/codex-home.ts::resolveCodexHome).
+ */
+export function deriveSdkSessionUuid(agentctlSessionId: string): string {
+  if (typeof agentctlSessionId !== "string" || agentctlSessionId.trim() === "") {
+    throw new Error(
+      `runtime-claude: spec.sessionId is set but blank ` +
+        `(${JSON.stringify(agentctlSessionId)}). The Claude Agent SDK addresses ` +
+        `sessions by UUID, and the agentctl session id is what that UUID is ` +
+        `derived from, so it must be a non-empty string.`,
+    );
+  }
+  return uuidV5(CLAUDE_SESSION_NAMESPACE, agentctlSessionId);
+}
 
 /**
  * Returns true when a ResolvedRef is a custom Pi-extension tool (entrypoint
@@ -273,11 +324,16 @@ function toMcpServerConfig(srv: MCPServer): McpServerConfig {
  * are granted per declared server via `mcp__<server>` allow rules. Anything
  * not declared in `spec.mcpServers[]` is never auto-approved.
  *
+ * `resumeSdkSessionId` carries the SDK-native session id captured on a
+ * previous turn of the same agentctl session (see index.ts). Its presence is
+ * what distinguishes a resumed turn from a first turn — the SDK forbids
+ * `sessionId` and `resume` together (sdk.d.ts:1804-1809).
  */
 export function buildOptions(
   spec: CompiledSpec,
   systemPrompt: string,
   subagents: Record<string, AgentDefinition>,
+  resumeSdkSessionId?: string,
 ): Options {
   const opts: Options = {
     model: spec.model.name,
@@ -307,7 +363,13 @@ export function buildOptions(
 
   if (Object.keys(subagents).length > 0) opts.agents = subagents;
 
-  if (spec.sessionId) opts.resume = spec.sessionId;
+  if (spec.sessionId) {
+    if (resumeSdkSessionId) {
+      opts.resume = resumeSdkSessionId;
+    } else {
+      opts.sessionId = deriveSdkSessionUuid(spec.sessionId);
+    }
+  }
 
   return opts;
 }
