@@ -35,7 +35,16 @@ interface ContentBlock {
   is_error?: boolean;
 }
 
-/** Normalize a tool_result content payload to a string. */
+/**
+ * Normalize a tool_result content payload to a string.
+ *
+ * Lossy by design: array items without a `text` property (e.g. an image
+ * block from a screenshot or browser tool) map to `""` and are dropped
+ * rather than represented. The wire protocol's `tool.result.content` is a
+ * plain string, and the sibling adapters extract text the same way, so
+ * this is an accepted limitation rather than an oversight — non-text
+ * tool-result content is not currently surfaced on the wire at all.
+ */
 function resultToString(content: unknown): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {

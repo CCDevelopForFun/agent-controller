@@ -113,6 +113,7 @@ describe("translateSdkMessage", () => {
     expect(r.events.map((e) => e.type)).toEqual(["error", "session.ended"]);
     expect(r.events[1].data).toMatchObject({ reason: "error" });
     expect(r.fatal).toBe(true);
+    expect(st.ended).toBe(true);
   });
 
   it("blocks hallucinated tool-call XML in block mode", () => {
@@ -131,6 +132,7 @@ describe("translateSdkMessage", () => {
     );
     expect(r.events.map((e) => e.type)).toEqual(["error", "session.ended"]);
     expect(r.fatal).toBe(true);
+    expect(st.ended).toBe(true);
   });
 
   it("scrubs and warns on hallucinated XML in warn mode", () => {
@@ -151,6 +153,12 @@ describe("translateSdkMessage", () => {
     expect(types).toContain("warning");
     expect(types).toContain("message");
     expect(r.fatal).toBeFalsy();
+
+    const messageEvent = r.events.find((e) => e.type === "message");
+    const scrubbedText = (messageEvent?.data as { text: string }).text;
+    expect(scrubbedText).toContain("ok");
+    expect(scrubbedText).not.toContain("<function_calls>");
+    expect(scrubbedText).not.toContain("<invoke");
   });
 
   it("ignores unknown message variants", () => {
