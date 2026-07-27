@@ -438,6 +438,8 @@ func newRunCmd() *cobra.Command {
 						adapterDir = "runtime-opencode"
 					} else if spec.Runtime.Type == "local-codex" {
 						adapterDir = "runtime-codex"
+					} else if spec.Runtime.Type == "local-claude" {
+						adapterDir = "runtime-claude"
 					}
 					srcDir := filepath.Join(wd, adapterDir, "src")
 					distDir := filepath.Join(wd, adapterDir, "dist")
@@ -877,9 +879,18 @@ func resolveRuntimeCommand(runtimeType string) ([]string, error) {
 			"codex runtime not found at %s — run `npm --prefix runtime-codex run build`",
 			candidate,
 		)
+	case "local-claude":
+		candidate := filepath.Join(wd, "runtime-claude", "dist", "index.js")
+		if _, err := os.Stat(candidate); err == nil {
+			return []string{"node", candidate}, nil
+		}
+		return nil, fmt.Errorf(
+			"claude runtime not found at %s — run `npm --prefix runtime-claude run build`",
+			candidate,
+		)
 	default:
 		return nil, fmt.Errorf(
-			"unsupported spec.runtime.type %q — expected one of: local | local-pi | local-opencode | local-codex",
+			"unsupported spec.runtime.type %q — expected one of: local | local-pi | local-opencode | local-codex | local-claude",
 			runtimeType,
 		)
 	}
