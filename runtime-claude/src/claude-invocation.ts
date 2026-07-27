@@ -80,7 +80,12 @@ export interface SubagentBody {
 
 /**
  * Maps an ADL Pi built-in tool name onto the Claude Agent SDK tool name.
- * Returns undefined for names with no SDK equivalent.
+ *
+ * This map now decides what the model can *use*, not merely what is
+ * auto-approved (see buildOptions), so an unmapped name must fail loudly —
+ * silently dropping it would hand back an Options that grants less than the
+ * spec declares. Mirrors PI_TO_OPENCODE_PERMISSION_KEY's "Add an entry."
+ * throw in runtime-opencode/src/opencode-config.ts.
  */
 const BUILTIN_TOOL_MAP: Record<string, string> = {
   bash: "Bash",
@@ -88,6 +93,73 @@ const BUILTIN_TOOL_MAP: Record<string, string> = {
   edit: "Edit",
   write: "Write",
 };
+
+/**
+ * The SDK tool that delegates to a subagent registered via `Options.agents`.
+ *
+ * The name is `Agent`, not `Task`. Verified from the SDK's own types rather
+ * than assumed: `AgentDefinition`'s doc comment is "Definition for a custom
+ * subagent that can be invoked via the Agent tool" (sdk.d.ts:36, repeated at
+ * :1353), and sdk-tools.d.ts declares `AgentInput`/`AgentOutput` with no
+ * `TaskInput` counterpart. `Task` survives only as a legacy alias the SDK
+ * rewrites to `Agent` internally, so listing `Agent` is the durable form.
+ */
+const SUBAGENT_DELEGATION_TOOL = "Agent";
+
+/**
+ * Map the spec's Pi built-in tools onto SDK tool names, preserving spec order.
+ *
+ * Non-built-ins are skipped: custom Pi-extension tools (entrypoint set) are
+ * already rejected by assertClaudeCompatible and by the Go compiler.
+ */
+function mapBuiltinTools(tools: ResolvedRef[]): string[] {
+  const out: string[] = [];
+  for (const t of tools) {
+    if (!t.builtin) continue;
+    const mapped = BUILTIN_TOOL_MAP[t.name];
+    if (!mapped) {
+      throw new Error(
+        `runtime-claude: spec.tools[] declares Pi built-in ${JSON.stringify(t.name)} ` +
+          `which is not in BUILTIN_TOOL_MAP. Add an entry. Known built-ins: ` +
+          `${Object.keys(BUILTIN_TOOL_MAP).join(", ")}.`,
+      );
+    }
+    out.push(mapped);
+  }
+  return out;
+}
+
+/**
+ * Build the permission-rule string that auto-approves every tool exposed by
+ * one declared MCP server.
+ *
+ * The SDK's allow-rule grammar splits on `__`: `mcp__<server>` grants the whole
+ * server, `mcp__<server>__<tool>` a single tool (sdk.d.ts:48 documents the same
+ * server-level forms for `disallowedTools`; sdk.mjs's rule validator lists
+ * `mcp__<server>` among the valid examples and rejects wildcards outside the
+ * tool position in allow rules). Two consequences are handled here:
+ *
+ *  - Server names are normalized by the SDK when it builds tool names —
+ *    "non-[a-zA-Z0-9_-] becomes _" (sdk.d.ts:3509) — so the rule must use the
+ *    normalized form or it would silently match nothing.
+ *  - A normalized name that still contains `__` is ambiguous under that
+ *    grammar (`a__b` would be read as server `a`, tool `b`, potentially
+ *    granting a *different* server). That cannot be expressed safely, so it
+ *    throws instead of emitting a rule that grants the wrong thing.
+ */
+function mcpServerAllowRule(name: string): string {
+  const normalized = name.replace(/[^a-zA-Z0-9_-]/g, "_");
+  if (normalized.includes("__")) {
+    throw new Error(
+      `runtime-claude: MCP server name ${JSON.stringify(name)} normalizes to ` +
+        `${JSON.stringify(normalized)}, which contains "__". The SDK's permission-rule ` +
+        `grammar reads "mcp__<server>__<tool>", so such a name cannot be granted ` +
+        `server-wide without also matching a different server. Rename the server in ` +
+        `spec.mcpServers[].name.`,
+    );
+  }
+  return `mcp__${normalized}`;
+}
 
 /**
  * Compose the system prompt: honesty preamble, then persona role, then persona
@@ -179,6 +251,28 @@ function toMcpServerConfig(srv: MCPServer): McpServerConfig {
  * loads ~/.claude/settings.json, project .claude/, and CLAUDE.md files, making
  * a declarative spec's behavior depend on the operator's machine and silently
  * widening the tool surface past what the spec declares.
+ *
+ * Tool gating uses BOTH SDK options, which do different jobs:
+ *
+ *  - `Options.tools` is the *restriction*: "Specify the base set of available
+ *    built-in tools … `[]` (empty array) — Disable all built-in tools"
+ *    (sdk.d.ts:1422-1434). It is always set, never left undefined, because
+ *    undefined means "all default Claude Code tools" — which is how a
+ *    `tools: []` spec previously kept a live Bash. Same contract
+ *    runtime-opencode states for its deny-baseline: a `tools: []` spec must
+ *    actually run with no tools.
+ *  - `Options.allowedTools` is *auto-approval*: "tool names that are
+ *    auto-allowed without prompting … To restrict which tools are available,
+ *    use the `tools` option instead" (sdk.d.ts:1368-1375). Runs here are
+ *    non-interactive and no `canUseTool` callback is supplied, so a tool that
+ *    is available but not auto-approved makes the SDK raise a control-request
+ *    error ("canUseTool callback is not provided."). Everything granted is
+ *    therefore also auto-approved.
+ *
+ * MCP tools are not built-ins and so are unaffected by `Options.tools`; they
+ * are granted per declared server via `mcp__<server>` allow rules. Anything
+ * not declared in `spec.mcpServers[]` is never auto-approved.
+ *
  */
 export function buildOptions(
   spec: CompiledSpec,
@@ -191,13 +285,20 @@ export function buildOptions(
     settingSources: [],
   };
 
-  const allowed = (spec.tools ?? [])
-    .filter((t) => t.builtin)
-    .map((t) => BUILTIN_TOOL_MAP[t.name])
-    .filter((n): n is string => Boolean(n));
-  if (allowed.length > 0) opts.allowedTools = allowed;
+  const granted = mapBuiltinTools(spec.tools ?? []);
+
+  // Subagents are delegated to through a tool. Registering them via
+  // `Options.agents` without granting that tool would leave the delegation
+  // silently unreachable — the same coupling runtime-opencode encodes as
+  // `grants["task"] = "allow"` when the spec declares subagents.
+  if (Object.keys(subagents).length > 0) granted.push(SUBAGENT_DELEGATION_TOOL);
+
+  opts.tools = granted;
 
   const servers = spec.mcpServers ?? [];
+  const allowed = [...granted, ...servers.map((srv) => mcpServerAllowRule(srv.name))];
+  opts.allowedTools = allowed;
+
   if (servers.length > 0) {
     const map: Record<string, McpServerConfig> = {};
     for (const srv of servers) map[srv.name] = toMcpServerConfig(srv);
@@ -205,6 +306,7 @@ export function buildOptions(
   }
 
   if (Object.keys(subagents).length > 0) opts.agents = subagents;
+
   if (spec.sessionId) opts.resume = spec.sessionId;
 
   return opts;

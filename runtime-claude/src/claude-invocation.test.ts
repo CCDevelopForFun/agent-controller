@@ -109,12 +109,88 @@ describe("buildOptions", () => {
       ],
     });
     const o = buildOptions(s, "sys", {});
+    expect(o.tools).toEqual(["Bash", "Read", "Edit", "Write"]);
     expect(o.allowedTools).toEqual(["Bash", "Read", "Edit", "Write"]);
   });
 
-  it("omits allowedTools when no tools are declared", () => {
-    const o = buildOptions(baseSpec(), "sys", {});
-    expect(o.allowedTools).toBeUndefined();
+  // Replaces "omits allowedTools when no tools are declared", which codified
+  // the pre-fix behavior: leaving `tools` undefined means "all default Claude
+  // Code tools" (sdk.d.ts:1422-1434), so a `tools: []` spec kept a live Bash.
+  it("grants no built-in tools for a tools: [] spec", () => {
+    const o = buildOptions(baseSpec({ tools: [] }), "sys", {});
+    expect(o.tools).toEqual([]);
+    expect(o.allowedTools).toEqual([]);
+  });
+
+  it("never leaves Options.tools undefined, which would mean the full default toolset", () => {
+    const o = buildOptions(baseSpec({ tools: [] }), "sys", {});
+    expect(o.tools).toBeDefined();
+    expect(o.tools).not.toEqual({ type: "preset", preset: "claude_code" });
+  });
+
+  it("grants exactly the declared built-ins and nothing else", () => {
+    const s = baseSpec({
+      tools: [
+        { name: "bash", builtin: true },
+        { name: "read", builtin: true },
+      ],
+    });
+    const o = buildOptions(s, "sys", {});
+    expect(o.tools).toEqual(["Bash", "Read"]);
+    expect(o.tools).not.toContain("Edit");
+    expect(o.tools).not.toContain("Write");
+    expect(o.allowedTools).not.toContain("Edit");
+    expect(o.allowedTools).not.toContain("Write");
+  });
+
+  it("throws naming an unmapped Pi built-in instead of silently dropping it", () => {
+    const s = baseSpec({ tools: [{ name: "glob", builtin: true }] });
+    expect(() => buildOptions(s, "sys", {})).toThrow(/glob/);
+    expect(() => buildOptions(s, "sys", {})).toThrow(/BUILTIN_TOOL_MAP/);
+  });
+
+  it("grants the Agent delegation tool when subagents are registered", () => {
+    const agents = { reviewer: { description: "reviews", prompt: "You review." } };
+    const s = baseSpec({ tools: [{ name: "read", builtin: true }] });
+    const o = buildOptions(s, "sys", agents);
+    expect(o.tools).toEqual(["Read", "Agent"]);
+    expect(o.allowedTools).toContain("Agent");
+  });
+
+  it("does not grant the Agent delegation tool when no subagents are registered", () => {
+    const s = baseSpec({ tools: [{ name: "read", builtin: true }] });
+    const o = buildOptions(s, "sys", {});
+    expect(o.tools).not.toContain("Agent");
+    expect(o.allowedTools).not.toContain("Agent");
+  });
+
+  it("auto-approves only the MCP servers the spec declares", () => {
+    const s = baseSpec({
+      mcpServers: [
+        { name: "time", transport: "stdio", command: "npx" },
+        { name: "docs", transport: "sse", url: "https://x/sse" },
+      ],
+    });
+    const o = buildOptions(s, "sys", {});
+    expect(o.allowedTools).toEqual(["mcp__time", "mcp__docs"]);
+    expect(o.allowedTools).not.toContain("mcp__other");
+    // MCP tools are not built-ins, so the restriction list stays empty.
+    expect(o.tools).toEqual([]);
+  });
+
+  it("normalizes MCP server names the SDK would rewrite, so the grant still matches", () => {
+    const s = baseSpec({
+      mcpServers: [{ name: "my.server", transport: "stdio", command: "npx" }],
+    });
+    const o = buildOptions(s, "sys", {});
+    expect(o.allowedTools).toEqual(["mcp__my_server"]);
+  });
+
+  it("throws for an MCP server name that is ambiguous under the mcp__ rule grammar", () => {
+    const s = baseSpec({
+      mcpServers: [{ name: "a__b", transport: "stdio", command: "npx" }],
+    });
+    expect(() => buildOptions(s, "sys", {})).toThrow(/spec\.mcpServers\[\]\.name/);
   });
 
   it("maps stdio MCP servers", () => {
