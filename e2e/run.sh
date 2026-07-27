@@ -85,15 +85,16 @@ if [[ "$ADAPTER" == "claude" ]]; then
   cli/bin/agentctl compile examples/hello-claude.yaml >/dev/null
 
   echo "==> compile must reject provider openai on local-claude"
-  tmpspec="$(mktemp -t claude-bad-XXXXXX).yaml"
+  tmpdir="$(mktemp -d -t claude-bad-XXXXXX)"
+  tmpspec="$tmpdir/bad.yaml"
   sed -e 's/provider: anthropic/provider: openai/' \
       -e 's/name: claude-opus-4-6/name: gpt-5.5/' \
       examples/hello-claude.yaml > "$tmpspec"
   if cli/bin/agentctl compile "$tmpspec" >/dev/null 2>&1; then
     echo "FAIL: expected compile to reject provider openai on local-claude" >&2
-    rm -f "$tmpspec"; exit 1
+    rm -rf "$tmpdir"; exit 1
   fi
-  rm -f "$tmpspec"
+  rm -rf "$tmpdir"
   echo "ok (compile rejects non-anthropic provider)"
 
   if [[ "${AGENT_CONTROLLER_RUN_LIVE:-0}" != "1" ]]; then

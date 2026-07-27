@@ -292,6 +292,7 @@ agentctl run classifier.yaml --workspace ./run-42                # 3. share memo
 | `examples/hello.yaml` | Basic agent — `get_time` tool, `audit-log` extension, `example-time-skill` |
 | `examples/hello-opencode.yaml` | Same shape on the opencode adapter (`runtime.type: local-opencode`) |
 | `examples/hello-codex.yaml` | Minimal agent on the codex adapter (`runtime.type: local-codex`, `model.provider: openai`) |
+| `examples/hello-claude.yaml` | Minimal agent on the claude adapter (`runtime.type: local-claude`, `model.provider: anthropic`) |
 | `examples/tracing-demo.yaml` | OTel tracing — run with `OTEL_EXPORTER_OTLP_ENDPOINT=...` |
 | `examples/mcp-time.yaml` | MCP via `@modelcontextprotocol/server-time` |
 | `examples/self-contained-mcp.yaml` | Same MCP agent with `extensions[].source` auto-install |
