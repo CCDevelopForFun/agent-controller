@@ -80,6 +80,12 @@ describe("buildPrompt", () => {
     const p = buildPrompt(baseSpec(), []);
     expect(p).not.toContain("undefined");
   });
+
+  it("excludes spec.task — task is query()'s prompt argument, not a system-prompt section", () => {
+    const s = baseSpec({ task: "SENTINEL_TASK_TEXT_7f3a9c" });
+    const p = buildPrompt(s, []);
+    expect(p).not.toContain("SENTINEL_TASK_TEXT_7f3a9c");
+  });
 });
 
 describe("buildOptions", () => {

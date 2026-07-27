@@ -74,7 +74,14 @@ export function readSkillBodies(root: string, refs: ResolvedRef[]): SkillBody[] 
       continue;
     }
     const { body } = parseFrontmatter(readFileSync(file, "utf8"));
-    if (body.trim()) out.push({ name: ref.name, body: body.trim() });
+    const trimmed = body.trim();
+    if (trimmed) {
+      out.push({ name: ref.name, body: trimmed });
+    } else {
+      process.stderr.write(
+        `[runtime-claude] WARNING: skill "${ref.name}" at ${file} has an empty body after stripping frontmatter; skipping.\n`,
+      );
+    }
   }
   return out;
 }

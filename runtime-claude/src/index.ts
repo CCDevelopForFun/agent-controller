@@ -114,7 +114,6 @@ async function main(): Promise<void> {
         message: err instanceof Error ? err.message : String(err),
       }));
       emit(write, stamp(sessionId, "session.ended", { reason: "error" }));
-      state.ended = true;
     }
     process.exitCode = 1;
     return;
