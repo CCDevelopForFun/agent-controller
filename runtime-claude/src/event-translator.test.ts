@@ -17,6 +17,52 @@ describe("translateSdkMessage", () => {
     expect(st.sdkSessionId).toBe("sdk-1");
   });
 
+  // `type: "system"` covers 28 SDKMessage variants. Only `init` starts a
+  // session; the rest previously each produced their own session.started,
+  // so one session emitted N of them.
+  it("emits nothing for non-init system subtypes", () => {
+    const st = createTranslatorState();
+    for (const subtype of [
+      "status",
+      "task_started",
+      "compact_boundary",
+      "permission_denied",
+      "api_retry",
+    ]) {
+      const r = translateSdkMessage(
+        { type: "system", subtype, session_id: "sdk-1" },
+        SID,
+        st,
+        "block",
+      );
+      expect(r.events, `subtype ${subtype}`).toEqual([]);
+    }
+  });
+
+  it("emits exactly one session.started across a full system-message sequence", () => {
+    const st = createTranslatorState();
+    const stream = [
+      { type: "system", subtype: "init", session_id: "sdk-1", model: "claude-opus-4-6" },
+      { type: "system", subtype: "status", session_id: "sdk-1" },
+      { type: "system", subtype: "task_started", session_id: "sdk-1", task_id: "t1" },
+      { type: "system", subtype: "api_retry", session_id: "sdk-1", attempt: 1 },
+    ];
+    const types = stream.flatMap((m) => translateSdkMessage(m, SID, st, "block").events.map((e) => e.type));
+    expect(types).toEqual(["session.started"]);
+  });
+
+  it("does not treat a non-init system message as a session-id source", () => {
+    const st = createTranslatorState();
+    const r = translateSdkMessage(
+      { type: "system", subtype: "status", session_id: "sdk-late" },
+      SID,
+      st,
+      "block",
+    );
+    expect(r.sdkSessionId).toBeUndefined();
+    expect(st.sdkSessionId).toBeUndefined();
+  });
+
   it("maps assistant text to a message event", () => {
     const st = createTranslatorState();
     const r = translateSdkMessage(

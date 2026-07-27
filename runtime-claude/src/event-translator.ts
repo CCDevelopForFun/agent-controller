@@ -15,7 +15,11 @@ import { stamp } from "./wire.js";
 import { detectHallucinatedToolCalls, stripHallucinationXml } from "./honesty.js";
 
 export interface TranslatorState {
-  /** The SDK's own session id, captured from the init message for --resume. */
+  /**
+   * The SDK's own session id, captured from the `system`/`init` message.
+   * index.ts persists this after the turn so the next turn of the same
+   * agentctl session can pass it to `Options.resume`.
+   */
   sdkSessionId?: string;
   ended: boolean;
 }
@@ -68,6 +72,19 @@ export function translateSdkMessage(
 
   switch (m.type) {
     case "system": {
+      // `type: "system"` is not one message shape. 28 SDKMessage variants
+      // carry it — init, status, api_retry, compact_boundary, task_started,
+      // task_updated, permission_denied, notification, … — discriminated by
+      // `subtype`. Only `init` (SDKSystemMessage, sdk.d.ts:4412) marks the
+      // start of a session; matching on `type` alone emitted one
+      // session.started per system message instead of one per session.
+      // runtime-codex/src/event-translator.ts emits exactly one on
+      // `thread.started`, which is the contract agentctl relies on.
+      //
+      // Other system subtypes fall through to no events, consistent with this
+      // module's forward-compatible stance on variants it does not model.
+      if (m.subtype !== "init") return { events: [] };
+
       const sdkSessionId = m.session_id as string | undefined;
       if (sdkSessionId) state.sdkSessionId = sdkSessionId;
       return {
