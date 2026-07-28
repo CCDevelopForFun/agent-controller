@@ -185,14 +185,14 @@ const captured = {
   modelGetCalls: [] as Array<[string, string]>,
   // The mocked agent object; tests can inspect onPayload after runSession.
   agentRef: undefined as any,
-  // Controls whether getModel returns a model or undefined (for error-path tests).
+  // Controls whether getBuiltinModel returns a model or undefined (for error-path tests).
   modelReturnUndefined: false,
   // Records calls to SessionManager static factories.
   sessionManagerCalls: [] as Array<{ method: string; args: any[] }>,
 };
 
-vi.mock("@earendil-works/pi-ai", () => ({
-  getModel: (provider: string, name: string) => {
+vi.mock("@earendil-works/pi-ai/providers/all", () => ({
+  getBuiltinModel: (provider: string, name: string) => {
     captured.modelGetCalls.push([provider, name]);
     if (captured.modelReturnUndefined) return undefined;
     return { __mocked: "model" };
@@ -733,7 +733,7 @@ describe("adapter", () => {
     expect(captured.createAgentArgs.resourceLoader).toBeDefined();
   });
 
-  it("looks up the model via pi-ai.getModel(provider, name)", async () => {
+  it("looks up the model via pi-ai getBuiltinModel(provider, name)", async () => {
     const ended = runSession(fixture(), () => {});
     await flushAndShutdown();
     await ended;
@@ -833,7 +833,7 @@ describe("adapter", () => {
   });
 
   // Finding 2: unknown model error
-  it("throws a clear error when getModel returns undefined", async () => {
+  it("throws a clear error when getBuiltinModel returns undefined", async () => {
     captured.modelReturnUndefined = true;
     const spec = fixture();
     spec.model = { provider: "openai", name: "does-not-exist" };

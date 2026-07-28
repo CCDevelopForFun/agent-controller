@@ -1,7 +1,7 @@
 {
   "name": "@agent-controller/runtime",
   "version": "0.7.0",
-  "description": "Pi runtime adapter for agent-controller — runs an ADL CompiledSpec against a Pi session and emits the NDJSON wire-event stream.",
+  "description": "Pi runtime adapter for agent-controller \u2014 runs an ADL CompiledSpec against a Pi session and emits the NDJSON wire-event stream.",
   "keywords": [
     "agent-controller",
     "adl",
@@ -41,8 +41,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "0.75.5",
-    "@earendil-works/pi-coding-agent": "0.75.5",
+    "@earendil-works/pi-ai": "0.82.1",
+    "@earendil-works/pi-coding-agent": "0.82.1",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/core": "^2.8.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.219.0",
