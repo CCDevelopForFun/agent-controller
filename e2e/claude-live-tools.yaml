@@ -1,0 +1,26 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: claude-live-tools
+  owner: ccdevelopforfun
+  description: |
+    e2e fixture for the claude live tool-execution tier. Declares exactly one
+    built-in tool (`read`) and gives the agent a task a Bash-enabled agent
+    would happily shell out for. The tier asserts that a `tool.call` for
+    `Read` appears and that no `tool.call` for `Bash` ever does — the
+    positive half matters, because "no Bash" passes trivially if the agent
+    calls no tools at all.
+spec:
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-20250514
+  persona:
+    role: File inspector
+    instructions: |
+      Use the tools you actually have. Do not describe tool calls in prose.
+  task: |
+    Read the file e2e/tool-tier-fixture.txt and report its contents verbatim.
+  tools:
+    - name: read
+  runtime:
+    type: local-claude

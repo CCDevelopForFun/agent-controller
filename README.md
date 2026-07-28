@@ -1,23 +1,24 @@
 # Agent Controller
 
-> **Declarative runtime for AI agents.** Define agents in YAML (ADL — Agent Definition Language). Run the same spec on the Pi, opencode, or codex runtime through a consistent backend interface.
+> **Declarative runtime for AI agents.** Define agents in YAML (ADL — Agent Definition Language). Run the same spec on the Pi, opencode, codex, or claude runtime through a consistent backend interface.
 
-Agent Controller separates **agent intent** (model, persona, tools, skills, MCP servers, guardrails, observability) from **execution substrate**. A spec that sticks to the cross-adapter feature set (persona, skills, MCP servers, guardrails) runs on the Pi, opencode, or codex adapter by changing one field — `runtime.type`. Specs that use Pi-only capabilities (custom Pi-extension tools like `get_time`, `spec.extensions[]`, subagents) are Pi-only — opencode and codex reject them at startup. The codex adapter additionally requires `model.provider: openai` (anthropic and google are rejected). Remote backends, like the Kubernetes target (a schema-level skeleton today), attach via a `RuntimeBinding`. Full [capability matrix](docs/architecture/harness-matrix.md).
+Agent Controller separates **agent intent** (model, persona, tools, skills, MCP servers, guardrails, observability) from **execution substrate**. A spec that sticks to the cross-adapter feature set (persona, skills, MCP servers, guardrails) runs on the Pi, opencode, codex, or claude adapter by changing one field — `runtime.type`. Specs that use Pi-only capabilities (custom Pi-extension tools like `get_time`, `spec.extensions[]`) are Pi-only — opencode, codex, and claude reject them at startup. `spec.subagents[]` works on Pi, opencode, and claude, but is rejected by codex. Two adapters pin the provider: codex requires `model.provider: openai` (anthropic and google are rejected), and claude requires `model.provider: anthropic` (openai and google are rejected). Remote backends, like the Kubernetes target (a schema-level skeleton today), attach via a `RuntimeBinding`. Full [capability matrix](docs/architecture/harness-matrix.md).
 
 ```bash
 agentctl run  examples/hello.yaml           # Pi adapter
 agentctl run  examples/hello-opencode.yaml  # opencode adapter (needs the `opencode` CLI on PATH)
 agentctl run  examples/hello-codex.yaml     # codex adapter (needs the `codex` CLI on PATH + OPENAI_API_KEY)
+agentctl run  examples/hello-claude.yaml    # Claude Agent SDK adapter (needs ANTHROPIC_API_KEY)
 agentctl chat examples/hello.yaml           # interactive REPL with session persistence
 ```
 
 ## Architecture
 
 <p align="center">
-  <img src="docs/architecture/architecture.svg" alt="Agent Controller architecture — agentctl dispatches a compiled spec over a stdio NDJSON wire protocol to the Pi, opencode, or codex runtime adapter, which loads the local registry and calls the LLM provider" width="780">
+  <img src="docs/architecture/architecture.svg" alt="Agent Controller architecture — agentctl dispatches a compiled spec over a stdio NDJSON wire protocol to the Pi, opencode, codex, or claude runtime adapter, which loads the local registry and calls the LLM provider" width="780">
 </p>
 
-`agentctl` (a Go binary) compiles the ADL spec and dispatches it over a versioned stdio NDJSON wire protocol to a runtime adapter (Pi, opencode, or codex). The adapter loads the local registry — tools, extensions, skills, agents, MCP servers — and drives the session against the model provider. Backends beyond Local (Kubernetes skeleton, AgentCore) are reserved in the schema but not fully wired. See [`docs/architecture/overview.md`](docs/architecture/overview.md) for the full layer breakdown and wire protocol reference.
+`agentctl` (a Go binary) compiles the ADL spec and dispatches it over a versioned stdio NDJSON wire protocol to a runtime adapter (Pi, opencode, codex, or claude). The adapter loads the local registry — tools, extensions, skills, agents, MCP servers — and drives the session against the model provider. Backends beyond Local (Kubernetes skeleton, AgentCore) are reserved in the schema but not fully wired. See [`docs/architecture/overview.md`](docs/architecture/overview.md) for the full layer breakdown and wire protocol reference.
 
 ## Quick start
 
@@ -31,8 +32,10 @@ agentctl chat examples/hello.yaml           # interactive REPL with session pers
 npm install -g @agent-controller/runtime              # Pi  (runtime.type: local)
 npm install -g @agent-controller/runtime-opencode     # opencode (runtime.type: local-opencode)
 npm install -g @agent-controller/runtime-codex        # codex (runtime.type: local-codex)
+npm install -g @agent-controller/runtime-claude       # claude (runtime.type: local-claude)
 #   the opencode adapter also needs the separate `opencode` CLI on PATH:  npm install -g opencode-ai
 #   the codex adapter also needs the `codex` CLI on PATH and OPENAI_API_KEY set in the environment
+#   the claude adapter needs no separate CLI — just ANTHROPIC_API_KEY set in the environment
 
 # 3. Write a self-contained spec (no registry refs, so it runs from any dir)
 cat > /tmp/hello.yaml <<'EOF'
@@ -159,7 +162,7 @@ A complete runnable example is at [`examples/serve-client.sh`](examples/serve-cl
 | `mcpServers` | v0.1.5 | MCP servers (stdio / streamable-http / SSE) |
 | `guardrails` | v0.1.8 | Hallucination detector mode (`block` / `warn` / `correct`) |
 | `observability.tracing` | v0.5 | Emit OTel spans to an OTLP endpoint |
-| `runtime` | v0.0.1 | `type` (`local-pi` / `local-opencode` / `local-codex`; `local` is the legacy Pi alias) + optional `requirements` for capability matching |
+| `runtime` | v0.0.1 | `type` (`local-pi` / `local-opencode` / `local-codex` / `local-claude`; `local` is the legacy Pi alias) + optional `requirements` for capability matching |
 
 The full schema is at [`schemas/adl.v1alpha1.json`](schemas/adl.v1alpha1.json). Unknown fields are rejected at compile time.
 
@@ -198,7 +201,7 @@ Supported transports: `stdio`, `streamable-http`, `sse`. See [`examples/mcp-time
 
 ## Chat & sessions
 
-`agentctl chat` opens an interactive REPL on any adapter (`runtime.type: local` / `local-pi` / `local-opencode` / `local-codex`). Sessions persist across process restarts via SQLite; pick up where you left off with `--resume`.
+`agentctl chat` opens an interactive REPL on any adapter (`runtime.type: local` / `local-pi` / `local-opencode` / `local-codex` / `local-claude`). Sessions persist across process restarts via SQLite; pick up where you left off with `--resume`.
 
 ```bash
 agentctl chat examples/hello.yaml               # start a session
@@ -289,6 +292,7 @@ agentctl run classifier.yaml --workspace ./run-42                # 3. share memo
 | `examples/hello.yaml` | Basic agent — `get_time` tool, `audit-log` extension, `example-time-skill` |
 | `examples/hello-opencode.yaml` | Same shape on the opencode adapter (`runtime.type: local-opencode`) |
 | `examples/hello-codex.yaml` | Minimal agent on the codex adapter (`runtime.type: local-codex`, `model.provider: openai`) |
+| `examples/hello-claude.yaml` | Minimal agent on the claude adapter (`runtime.type: local-claude`, `model.provider: anthropic`) |
 | `examples/tracing-demo.yaml` | OTel tracing — run with `OTEL_EXPORTER_OTLP_ENDPOINT=...` |
 | `examples/mcp-time.yaml` | MCP via `@modelcontextprotocol/server-time` |
 | `examples/self-contained-mcp.yaml` | Same MCP agent with `extensions[].source` auto-install |

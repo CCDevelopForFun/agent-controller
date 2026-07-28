@@ -1,0 +1,43 @@
+{
+  "name": "@agent-controller/runtime-claude",
+  "version": "0.7.0",
+  "description": "Claude Agent SDK runtime adapter for agent-controller — runs an ADL CompiledSpec via @anthropic-ai/claude-agent-sdk and emits the NDJSON wire-event stream.",
+  "keywords": [
+    "agent-controller",
+    "adl",
+    "claude",
+    "claude-code",
+    "agent",
+    "ai-agents",
+    "llm",
+    "anthropic",
+    "runtime-adapter"
+  ],
+  "homepage": "https://github.com/CCDevelopForFun/agent-controller#readme",
+  "bugs": "https://github.com/CCDevelopForFun/agent-controller/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CCDevelopForFun/agent-controller.git",
+    "directory": "runtime-claude"
+  },
+  "license": "MIT",
+  "author": "CCDevelopForFun",
+  "type": "module",
+  "main": "dist/index.js",
+  "files": ["dist", "README.md", "LICENSE"],
+  "publishConfig": { "access": "public" },
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "tsc -p .",
+    "test": "npm run build && vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.220"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "typescript": "latest",
+    "vitest": "latest"
+  }
+}

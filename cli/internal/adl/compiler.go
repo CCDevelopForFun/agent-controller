@@ -283,6 +283,7 @@ func Compile(doc map[string]any, idx *registry.ManifestIndex) (CompiledSpec, err
 var adapterCheckers = map[string]func(CompiledSpec) error{
 	"local-opencode": checkOpencodeIncompatibilities,
 	"local-codex":    checkCodexIncompatibilities,
+	"local-claude":   checkClaudeIncompatibilities,
 }
 
 // checkOpencodeIncompatibilities mirrors the rejections that
@@ -385,6 +386,59 @@ func checkCodexIncompatibilities(spec CompiledSpec) error {
 	}
 	return fmt.Errorf(
 		"spec declares capabilities not supported by runtime.type: local-codex:\n"+
+			"  - %s\nEither remove these fields or switch to runtime.type: local (Pi adapter) which supports them",
+		strings.Join(problems, "\n  - "),
+	)
+}
+
+// checkClaudeIncompatibilities mirrors the rejections that runtime-claude
+// performs at adapter startup. Cases checked here:
+//
+//   - spec.model.provider != "anthropic" — the Claude Agent SDK targets the
+//     Anthropic API; Bedrock/Vertex routing is deferred (see the design spec)
+//   - spec.extensions[] non-empty — Pi extension modules don't run here
+//   - spec.installs[] non-empty — deprecated; use spec.extensions[].source on Pi
+//   - spec.tools[] entries that are custom Pi-extension tools (entrypoint set
+//     but builtin false) — the SDK exposes its own built-in tool surface
+//
+// spec.subagents[] is deliberately NOT rejected: the SDK registers them
+// natively via the `agents` option.
+func checkClaudeIncompatibilities(spec CompiledSpec) error {
+	var problems []string
+	if spec.Model.Provider != "anthropic" {
+		problems = append(problems, fmt.Sprintf(
+			"spec.model.provider %q — the claude adapter supports only provider: anthropic; "+
+				"use runtime.type: local / local-pi / local-opencode for openai/google",
+			spec.Model.Provider))
+	}
+	if len(spec.Extensions) > 0 {
+		problems = append(problems, fmt.Sprintf(
+			"spec.extensions (%d declared) — Pi extension JS modules don't run inside the Claude Agent SDK",
+			len(spec.Extensions)))
+	}
+	if len(spec.Installs) > 0 {
+		problems = append(problems, fmt.Sprintf(
+			"spec.installs (%d entries) — deprecated; use spec.extensions[].source on the Pi adapter (runtime.type: local)",
+			len(spec.Installs)))
+	}
+	var customTools []string
+	for _, t := range spec.Tools {
+		if t.Entrypoint != "" && !t.Builtin {
+			customTools = append(customTools, t.Name)
+		}
+	}
+	if len(customTools) > 0 {
+		sort.Strings(customTools)
+		problems = append(problems, fmt.Sprintf(
+			"spec.tools[] contains custom Pi-extension tools that cannot run on claude: %v. "+
+				"Only Pi built-in tools (bash, read, edit, write) are supported on the claude adapter",
+			customTools))
+	}
+	if len(problems) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"spec declares capabilities not supported by runtime.type: local-claude:\n"+
 			"  - %s\nEither remove these fields or switch to runtime.type: local (Pi adapter) which supports them",
 		strings.Join(problems, "\n  - "),
 	)

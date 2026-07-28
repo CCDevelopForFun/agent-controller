@@ -35,7 +35,8 @@ type RuntimeBindingSpec struct {
 // Backend.Resolve().
 type RuntimeBindingSelector struct {
 	// RuntimeType must equal the Agent's spec.runtime.type. Allowed values
-	// match the schema enum: local | local-pi | local-opencode.
+	// match the schema enum:
+	// local | local-pi | local-opencode | local-codex | local-claude.
 	RuntimeType string `json:"runtimeType" yaml:"runtimeType"`
 	// Capabilities this Binding's target provides. The matcher (slice 3.3)
 	// will require every `true` requirement in the Agent's

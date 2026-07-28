@@ -29,8 +29,9 @@ See [`docs/versioning.md`](docs/versioning.md) for the full policy and compatibi
 - Pi adapter (legacy from v0.1.x, production)
 - opencode adapter (`runtime-opencode/`) — full session dispatch via `@opencode-ai/sdk`, SSE event translation, MCP + subagents + skills wiring
 - **codex adapter (`runtime-codex/`)** — third adapter, shipped post-v0.2.0 on the `codex-adapter` branch. `runtime.type: local-codex`; OpenAI-only; native `workspace-write` sandbox (the only adapter with a built-in sandbox); session resume via stable `CODEX_HOME` + persisted `thread_id`; MCP (stdio + streamable-http), skills, guardrails, output-schema. Requires `codex` CLI on PATH + `OPENAI_API_KEY`. See [`runtime-codex/`](runtime-codex/) and [`CHANGELOG.md`](CHANGELOG.md) for the full entry.
-- ADL `runtime.type: local | local-pi | local-opencode | local-codex` selector
-- Harness capability matrix ([`docs/architecture/harness-matrix.md`](docs/architecture/harness-matrix.md)) — every ADL feature mapped to ✅/⚠/❌ per adapter (Pi, opencode, codex columns complete; hermes-agent deferred)
+- **claude adapter (`runtime-claude/`)** — fourth adapter. `runtime.type: local-claude`; Anthropic-only; native subagent registration and all three MCP transports; skills inlined for cross-adapter parity; session resume via the SDK `resume` option. Requires only `ANTHROPIC_API_KEY` — no external CLI on PATH. See [`runtime-claude/`](runtime-claude/).
+- ADL `runtime.type: local | local-pi | local-opencode | local-codex | local-claude` selector
+- Harness capability matrix ([`docs/architecture/harness-matrix.md`](docs/architecture/harness-matrix.md)) — every ADL feature mapped to ✅/⚠/❌ per adapter (Pi, opencode, codex, claude columns complete; hermes-agent deferred)
 - Dual-adapter E2E (`ADAPTER=pi|opencode ./e2e/run.sh`)
 - This document + `SECURITY.md` + `CONTRIBUTING.md`
 - GitHub Actions release workflow: cross-platform `agentctl` binaries + checksums on `v*` tag

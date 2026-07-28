@@ -1,0 +1,31 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: claude-live-mcp
+  owner: ccdevelopforfun
+  description: |
+    e2e fixture for the claude live tool-execution tier. Declares zero
+    built-in tools and one stdio MCP server backed by e2e/fake-mcp-server.mjs
+    (no network, no npx download). The tier asserts that the declared MCP tool
+    actually executes — which only happens if spec.mcpServers[] reaches
+    Options.mcpServers AND the `mcp__<server>` allow rule auto-approves it.
+    Without that rule the SDK raises "canUseTool callback is not provided."
+spec:
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-20250514
+  persona:
+    role: Sentinel fetcher
+    instructions: |
+      You have one MCP tool available. Use it; do not guess the answer.
+  task: |
+    Call the echo_sentinel tool and report exactly the string it returns.
+  tools: []
+  mcpServers:
+    - name: e2efake
+      transport: stdio
+      command: node
+      args:
+        - e2e/fake-mcp-server.mjs
+  runtime:
+    type: local-claude
