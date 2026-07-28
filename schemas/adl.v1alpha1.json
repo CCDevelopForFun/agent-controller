@@ -125,8 +125,8 @@
           "properties": {
             "type": {
               "type": "string",
-              "description": "Which local runtime adapter to dispatch to. `local` is the legacy v0.1.x alias for `local-pi` (the Pi adapter) and stays accepted for backwards compatibility. `local-opencode` routes to the opencode adapter shipped under runtime-opencode/. `local-codex` routes to the codex adapter shipped under runtime-codex/.",
-              "enum": ["local", "local-pi", "local-opencode", "local-codex"]
+              "description": "Which local runtime adapter to dispatch to. `local` is the legacy v0.1.x alias for `local-pi` (the Pi adapter) and stays accepted for backwards compatibility. `local-opencode` routes to the opencode adapter shipped under runtime-opencode/. `local-codex` routes to the codex adapter shipped under runtime-codex/. `local-claude` routes to the Claude Agent SDK adapter shipped under runtime-claude/ (requires model.provider: anthropic).",
+              "enum": ["local", "local-pi", "local-opencode", "local-codex", "local-claude"]
             },
             "requirements": {
               "type": "object",

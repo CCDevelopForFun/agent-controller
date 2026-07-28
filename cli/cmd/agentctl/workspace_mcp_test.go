@@ -278,6 +278,59 @@ func TestDeclaredBuiltinTools(t *testing.T) {
 	}
 }
 
+// minimalClaudeAgentSpecWithBash declares a builtin tool under
+// runtime.type: local-claude, so declaredBuiltinTools(&spec) is non-empty
+// and the Pi-only "--workspace will drop your built-ins" warning would fire
+// for it if the claude adapter were (wrongly) treated as Pi-like.
+const minimalClaudeAgentSpecWithBash = `apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: t
+spec:
+  model:
+    provider: anthropic
+    name: claude-opus-4-6
+  task: "say hi"
+  tools:
+    - name: bash
+  runtime:
+    type: local-claude
+`
+
+func TestRunWorkspaceNoPiWarningForClaudeAdapter(t *testing.T) {
+	// The claude adapter grants each declared tool independently (via the
+	// SDK's allowedTools), like opencode, so it must NOT get the Pi-only
+	// warning that --workspace will drop its declared built-in tools.
+	// Regression test for the isPiAdapter deny-list at main.go:372 falling
+	// through to true for runtime.type: local-claude.
+	// resolveRuntimeCommand honors AGENT_CONTROLLER_RUNTIME as an override
+	// before ever reaching the "claude runtime not found" path; clear it so
+	// the test's deterministic-failure assumption holds regardless of the
+	// host environment (codex review finding).
+	t.Setenv("AGENT_CONTROLLER_RUNTIME", "")
+
+	spec := writeTemp(t, "agent.yaml", minimalClaudeAgentSpecWithBash)
+	cmd := newRunCmd()
+	cmd.SetArgs([]string{spec, "--workspace", t.TempDir()})
+	cmd.SilenceUsage = true
+	cmd.SilenceErrors = true
+	cmd.SetOut(&strings.Builder{})
+	var stderr strings.Builder
+	cmd.SetErr(&stderr)
+	err := cmd.Execute()
+
+	// runtime-claude/ is never built in this repo (Task 1 is Go-layer only),
+	// so resolveRuntimeCommand must fail deterministically — that failure is
+	// how we know execution reached past the --workspace warning check
+	// rather than exiting early for an unrelated reason.
+	if err == nil || !strings.Contains(err.Error(), "claude runtime not found") {
+		t.Fatalf("expected a deterministic 'claude runtime not found' error, got: %v", err)
+	}
+	if strings.Contains(stderr.String(), "will lose its declared built-in tool") {
+		t.Errorf("claude adapter must not get the Pi-only built-ins warning; stderr: %q", stderr.String())
+	}
+}
+
 func TestRunRejectsEmptyWorkspaceFlag(t *testing.T) {
 	// An explicit `--workspace ""` (a wrapper expanding an unset var) must
 	// error, not silently run without the requested memory. Codex pass 5.

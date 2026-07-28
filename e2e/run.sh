@@ -7,8 +7,8 @@ cd "$(dirname "$0")/.."
 #   ADAPTER=opencode AGENT_CONTROLLER_RUN_LIVE=1 ANTHROPIC_API_KEY=... ./e2e/run.sh
 ADAPTER="${ADAPTER:-pi}"
 case "$ADAPTER" in
-  pi|opencode|codex) ;;
-  *) echo "ADAPTER must be 'pi', 'opencode', or 'codex' (got: $ADAPTER)" >&2; exit 2 ;;
+  pi|opencode|codex|claude) ;;
+  *) echo "ADAPTER must be 'pi', 'opencode', 'codex', or 'claude' (got: $ADAPTER)" >&2; exit 2 ;;
 esac
 
 # ── codex hermetic tier ────────────────────────────────────────────────────────
@@ -67,6 +67,139 @@ if [[ "$ADAPTER" == "codex" ]]; then
   # Fall through to the shared live-run block below.
 fi
 
+# ── claude hermetic tier ───────────────────────────────────────────────────────
+# ADAPTER=claude runs hermetically by default: it exercises the compile-time
+# rejection path and the adapter's own unsupported-spec path, neither of which
+# needs a model. No PATH shim is required — the Claude Agent SDK ships its own
+# executable, unlike the opencode and codex CLIs. The live tier is gated behind
+# AGENT_CONTROLLER_RUN_LIVE=1 + ANTHROPIC_API_KEY.
+if [[ "$ADAPTER" == "claude" ]]; then
+  echo "==> building runtime-claude"
+  (cd runtime-claude && npm run build)
+
+  echo "==> building cli"
+  (cd cli && go build -o bin/agentctl ./cmd/agentctl)
+
+  echo "==> validate + compile examples/hello-claude.yaml"
+  cli/bin/agentctl validate examples/hello-claude.yaml
+  cli/bin/agentctl compile examples/hello-claude.yaml >/dev/null
+
+  echo "==> compile must reject provider openai on local-claude"
+  tmpdir="$(mktemp -d -t claude-bad-XXXXXX)"
+  tmpspec="$tmpdir/bad.yaml"
+  sed -e 's/provider: anthropic/provider: openai/' \
+      -e 's/name: claude-opus-4-6/name: gpt-5.5/' \
+      examples/hello-claude.yaml > "$tmpspec"
+  if cli/bin/agentctl compile "$tmpspec" >/dev/null 2>&1; then
+    echo "FAIL: expected compile to reject provider openai on local-claude" >&2
+    rm -rf "$tmpdir"; exit 1
+  fi
+  rm -rf "$tmpdir"
+  echo "ok (compile rejects non-anthropic provider)"
+
+  if [[ "${AGENT_CONTROLLER_RUN_LIVE:-0}" != "1" ]]; then
+    echo "==> adapter rejects an unsupported spec on stdin"
+    out="$(echo '{"v":1,"metadata":{"name":"t"},"model":{"provider":"openai","name":"gpt-5.5"},"task":"hi","tools":[],"extensions":[],"skills":[],"runtime":{"type":"local-claude"}}' \
+      | node runtime-claude/dist/index.js || true)"
+    echo "$out" | grep -q '"type":"error"' || { echo "FAIL: expected an error event" >&2; exit 1; }
+    echo "$out" | grep -q 'spec.model.provider' || { echo "FAIL: error must name the field" >&2; exit 1; }
+    echo "ok (adapter=claude, hermetic)"
+    exit 0
+  fi
+
+  if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+    echo "ADAPTER=claude AGENT_CONTROLLER_RUN_LIVE=1 set but ANTHROPIC_API_KEY is empty. Aborting." >&2
+    exit 1
+  fi
+
+  echo "==> running (live, adapter=claude, spec=examples/hello-claude.yaml)"
+  export AGENT_CONTROLLER_RUNTIME="$PWD/runtime-claude/dist/index.js"
+  cli/bin/agentctl run examples/hello-claude.yaml
+
+  # ── live tool-execution tier ────────────────────────────────────────────────
+  #
+  # !!! AUTHORED BUT NEVER EXECUTED !!!
+  # This block was written during the pre-merge review fix wave on a machine
+  # with no ANTHROPIC_API_KEY, so it has never been run against a real model.
+  # Everything below is derived from behavior that WAS verified without a key
+  # (the SDK's `system`/`init` message reports the exact tool list it was given,
+  # and e2e/fake-mcp-server.mjs was smoke-tested standalone over stdio), but the
+  # assertions themselves are unproven. Expect to debug them on first run.
+  #
+  # Why it exists: the three Critical defects found in review (allowlist not
+  # enforced, N session.started per session, session ids not bridged) all
+  # survived six task-level reviews because no test — hermetic or live — ever
+  # executed a tool. The hermetic tier covers rejection paths only, and the
+  # live tier above runs a tool-free hello.
+
+  # Temp files live in a mktemp -d dir cleaned up on EVERY exit path, matching
+  # the hermetic tier above. Failure paths previously leaked /tmp/claude-*.ndjson.
+  LIVE_TMP="$(mktemp -d -t claude-live-XXXXXX)"
+  trap 'rm -rf "${LIVE_TMP}"' EXIT
+  TOOLS_OUT="${LIVE_TMP}/tools.ndjson"
+  MCP_OUT="${LIVE_TMP}/mcp.ndjson"
+
+  echo "==> live tool tier 1/2: declared tools are the only tools"
+  cli/bin/agentctl run e2e/claude-live-tools.yaml --raw-out "$TOOLS_OUT" >/dev/null
+
+  # Exactly one session.started per session. `case "system"` used to match all
+  # 28 system subtypes, so a single session emitted one per system message.
+  started="$(grep -c '"type":"session.started"' "$TOOLS_OUT" || true)"
+  if [[ "$started" != "1" ]]; then
+    echo "FAIL: expected exactly 1 session.started, got ${started}" >&2
+    cat "$TOOLS_OUT" >&2; exit 1
+  fi
+
+  # The spec declares `tools: [read]`. Bash must never appear: before the fix,
+  # spec.tools[] went to Options.allowedTools (auto-approval) instead of
+  # Options.tools (the restriction), leaving the full default toolset live.
+  if grep '"type":"tool.call"' "$TOOLS_OUT" | grep -q '"toolName":"Bash"'; then
+    echo "FAIL: Bash tool.call emitted for a spec declaring only tools: [read]" >&2
+    cat "$TOOLS_OUT" >&2; exit 1
+  fi
+
+  # Positive half — without it "no Bash" passes trivially when the agent calls
+  # no tools at all, which is exactly the hole that let the defect through.
+  if ! grep '"type":"tool.call"' "$TOOLS_OUT" | grep -q '"toolName":"Read"'; then
+    echo "FAIL: expected a Read tool.call; the granted tool never executed" >&2
+    cat "$TOOLS_OUT" >&2; exit 1
+  fi
+  # Scoped to tool.result lines: an assistant message echoing the sentinel back
+  # in prose must not satisfy an assertion whose message claims the tool result
+  # carried it.
+  if ! grep '"type":"tool.result"' "$TOOLS_OUT" | grep -q 'AGENTCTL_E2E_READ_SENTINEL_4b7ad2'; then
+    echo "FAIL: Read tool.result did not carry the fixture sentinel" >&2
+    cat "$TOOLS_OUT" >&2; exit 1
+  fi
+  echo "ok (exactly one session.started; Read granted, Bash absent)"
+
+  echo "==> live tool tier 2/2: a declared MCP tool actually executes"
+  # e2e/fake-mcp-server.mjs is a local stdio MCP server — no network, no npx
+  # download. Reaching the sentinel proves spec.mcpServers[] became
+  # Options.mcpServers AND the `mcp__<server>` allow rule auto-approved the
+  # call; without that rule the SDK raises "canUseTool callback is not
+  # provided." instead of executing.
+  cli/bin/agentctl run e2e/claude-live-mcp.yaml --raw-out "$MCP_OUT" >/dev/null
+
+  started="$(grep -c '"type":"session.started"' "$MCP_OUT" || true)"
+  if [[ "$started" != "1" ]]; then
+    echo "FAIL: expected exactly 1 session.started, got ${started}" >&2
+    cat "$MCP_OUT" >&2; exit 1
+  fi
+  if ! grep '"type":"tool.call"' "$MCP_OUT" | grep -q 'echo_sentinel'; then
+    echo "FAIL: no tool.call for the declared MCP tool" >&2
+    cat "$MCP_OUT" >&2; exit 1
+  fi
+  if ! grep '"type":"tool.result"' "$MCP_OUT" | grep -q 'AGENTCTL_E2E_MCP_SENTINEL_9f21c4'; then
+    echo "FAIL: MCP tool.result did not carry the sentinel — the tool did not execute" >&2
+    cat "$MCP_OUT" >&2; exit 1
+  fi
+  echo "ok (declared MCP tool executed)"
+
+  echo "ok (adapter=claude, live)"
+  exit 0
+fi
+
 if [[ "${AGENT_CONTROLLER_RUN_LIVE:-0}" != "1" ]]; then
   echo "Live E2E skipped: set AGENT_CONTROLLER_RUN_LIVE=1 and ANTHROPIC_API_KEY to exercise the real LLM path."
   echo ""
@@ -79,6 +212,8 @@ if [[ "${AGENT_CONTROLLER_RUN_LIVE:-0}" != "1" ]]; then
   echo "                        docs/architecture/harness-matrix.md, Phase 2 follow-up #1)"
   echo "  - codex adapter:     ADAPTER=codex ./e2e/run.sh"
   echo "                       (hermetic fake-codex shim covers the full adapter pipeline)"
+  echo "  - claude adapter:    ADAPTER=claude ./e2e/run.sh"
+  echo "                       (hermetic: compile rejection + adapter rejection paths)"
   exit 0
 fi
 

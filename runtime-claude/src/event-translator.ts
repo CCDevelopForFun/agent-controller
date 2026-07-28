@@ -1,0 +1,207 @@
+/**
+ * SDKMessage -> wire-event translation for the Claude Agent SDK adapter.
+ *
+ * The SDK's SDKMessage union has 37 variants and grows with minor releases,
+ * so this translator matches only the variants the wire protocol needs and
+ * ignores the rest. An unrecognized variant is never an error.
+ *
+ * model.request / model.response are deliberately not emitted: the SDK does
+ * not surface per-model-request events, and synthesizing them would lose
+ * fidelity. Same gap as the opencode and codex adapters.
+ */
+
+import type { HallucinationMode, WireEvent } from "./types.js";
+import { stamp } from "./wire.js";
+import { detectHallucinatedToolCalls, stripHallucinationXml } from "./honesty.js";
+
+export interface TranslatorState {
+  /**
+   * The SDK's own session id, captured from the `system`/`init` message.
+   * index.ts persists this after the turn so the next turn of the same
+   * agentctl session can pass it to `Options.resume`.
+   */
+  sdkSessionId?: string;
+  ended: boolean;
+}
+
+export function createTranslatorState(): TranslatorState {
+  return { ended: false };
+}
+
+interface ContentBlock {
+  type?: string;
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: unknown;
+  tool_use_id?: string;
+  content?: unknown;
+  is_error?: boolean;
+}
+
+/**
+ * Normalize a tool_result content payload to a string.
+ *
+ * Lossy by design: array items without a `text` property (e.g. an image
+ * block from a screenshot or browser tool) map to `""` and are dropped
+ * rather than represented. The wire protocol's `tool.result.content` is a
+ * plain string, and the sibling adapters extract text the same way, so
+ * this is an accepted limitation rather than an oversight — non-text
+ * tool-result content is not currently surfaced on the wire at all.
+ */
+function resultToString(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((b) => (b && typeof b === "object" && "text" in b ? String((b as ContentBlock).text ?? "") : ""))
+      .join("");
+  }
+  return content == null ? "" : JSON.stringify(content);
+}
+
+export function translateSdkMessage(
+  msg: unknown,
+  sessionId: string,
+  state: TranslatorState,
+  mode: HallucinationMode = "block",
+): { events: WireEvent[]; sdkSessionId?: string; fatal?: boolean } {
+  if (state.ended) return { events: [] };
+  if (!msg || typeof msg !== "object") return { events: [] };
+
+  const m = msg as Record<string, unknown>;
+
+  switch (m.type) {
+    case "system": {
+      // `type: "system"` is not one message shape. 28 SDKMessage variants
+      // carry it — init, status, api_retry, compact_boundary, task_started,
+      // task_updated, permission_denied, notification, … — discriminated by
+      // `subtype`. Only `init` (SDKSystemMessage, sdk.d.ts:4412) marks the
+      // start of a session; matching on `type` alone emitted one
+      // session.started per system message instead of one per session.
+      // runtime-codex/src/event-translator.ts emits exactly one on
+      // `thread.started`, which is the contract agentctl relies on.
+      //
+      // Other system subtypes fall through to no events, consistent with this
+      // module's forward-compatible stance on variants it does not model.
+      if (m.subtype !== "init") return { events: [] };
+
+      const sdkSessionId = m.session_id as string | undefined;
+      if (sdkSessionId) state.sdkSessionId = sdkSessionId;
+      return {
+        events: [stamp(sessionId, "session.started", { sdkSessionId, model: m.model })],
+        sdkSessionId,
+      };
+    }
+
+    case "assistant": {
+      const message = m.message as { content?: ContentBlock[] } | undefined;
+      const blocks = message?.content ?? [];
+      const events: WireEvent[] = [];
+
+      const text = blocks
+        .filter((b) => b.type === "text")
+        .map((b) => b.text ?? "")
+        .join("");
+
+      if (text) {
+        const hits = detectHallucinatedToolCalls(text);
+        if (hits.length > 0) {
+          if (mode === "block") {
+            state.ended = true;
+            return {
+              events: [
+                stamp(sessionId, "error", {
+                  kind: "hallucinated_tool_call",
+                  message:
+                    `assistant fabricated tool-call XML (${hits.join(", ")}); ` +
+                    `guardrails.hallucinationDetector is "block"`,
+                }),
+                stamp(sessionId, "session.ended", { reason: "error" }),
+              ],
+              fatal: true,
+            };
+          }
+          const { text: scrubbed } = stripHallucinationXml(text);
+          events.push(
+            stamp(sessionId, "warning", {
+              kind: "hallucinated_tool_call",
+              detected: hits,
+              message: "fabricated tool-call XML scrubbed from assistant message",
+            }),
+          );
+          events.push(stamp(sessionId, "message", { role: "assistant", text: scrubbed }));
+        } else {
+          events.push(stamp(sessionId, "message", { role: "assistant", text }));
+        }
+      }
+
+      for (const b of blocks) {
+        if (b.type === "tool_use") {
+          events.push(
+            stamp(sessionId, "tool.call", {
+              toolName: b.name,
+              callId: b.id,
+              args: b.input,
+            }),
+          );
+        }
+      }
+
+      return { events };
+    }
+
+    case "user": {
+      const message = m.message as { content?: ContentBlock[] } | undefined;
+      const blocks = message?.content ?? [];
+      const events: WireEvent[] = [];
+      for (const b of blocks) {
+        if (b.type === "tool_result") {
+          events.push(
+            stamp(sessionId, "tool.result", {
+              callId: b.tool_use_id,
+              isError: Boolean(b.is_error),
+              content: resultToString(b.content),
+            }),
+          );
+        }
+      }
+      return { events };
+    }
+
+    case "result": {
+      state.ended = true;
+      const isError = Boolean(m.is_error) || m.subtype !== "success";
+      if (isError) {
+        // `subtype` can be the literal "success" even when `is_error` is what
+        // triggered this branch (e.g. an auth failure: the SDK reports
+        // subtype "success" alongside is_error: true). `kind` must describe
+        // the error, never echo "success" — fall back to the generic "error"
+        // constant in that case and pass genuine error subtypes through.
+        const subtype = typeof m.subtype === "string" ? m.subtype : undefined;
+        const kind = subtype && subtype !== "success" ? subtype : "error";
+        return {
+          events: [
+            stamp(sessionId, "error", {
+              kind,
+              message: String(m.result ?? "session failed"),
+            }),
+            stamp(sessionId, "session.ended", { reason: "error" }),
+          ],
+          fatal: true,
+        };
+      }
+      return {
+        events: [
+          stamp(sessionId, "session.ended", {
+            reason: "completed",
+            result: m.result,
+            numTurns: m.num_turns,
+          }),
+        ],
+      };
+    }
+
+    default:
+      return { events: [] };
+  }
+}

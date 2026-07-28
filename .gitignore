@@ -34,5 +34,8 @@ audit.log
 # Personal working notes — kept out of the repo on purpose; mirror in
 # the Obsidian vault at Plumber-NBI/agent-controller/ instead.
 docs/superpowers/
+
+# Subagent-driven-development scratch (ledger, task briefs, review packages)
+.superpowers/
 docs/source-memo/
 .worktrees/

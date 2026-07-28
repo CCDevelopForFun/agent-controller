@@ -35,8 +35,8 @@
           "properties": {
             "runtimeType": {
               "type": "string",
-              "description": "Must equal the Agent's spec.runtime.type. Use `local-pi` or `local-opencode` for explicit per-adapter bindings, or `local` for the v0.1.x legacy alias.",
-              "enum": ["local", "local-pi", "local-opencode"]
+              "description": "Must equal the Agent's spec.runtime.type. Use `local-pi`, `local-opencode`, `local-codex`, or `local-claude` for explicit per-adapter bindings, or `local` for the v0.1.x legacy alias.",
+              "enum": ["local", "local-pi", "local-opencode", "local-codex", "local-claude"]
             },
             "capabilities": {
               "type": "object",

@@ -738,3 +738,84 @@ func TestCompileCodexCleanSpecPasses(t *testing.T) {
 		t.Fatalf("clean local-codex spec should pass: %v", err)
 	}
 }
+
+func TestCheckClaudeIncompatibilities(t *testing.T) {
+	base := func() CompiledSpec {
+		return CompiledSpec{Model: Model{Provider: "anthropic", Name: "claude-opus-4-6"}}
+	}
+
+	t.Run("anthropic provider passes", func(t *testing.T) {
+		if err := checkClaudeIncompatibilities(base()); err != nil {
+			t.Fatalf("expected nil, got %v", err)
+		}
+	})
+
+	t.Run("openai provider rejected", func(t *testing.T) {
+		s := base()
+		s.Model.Provider = "openai"
+		err := checkClaudeIncompatibilities(s)
+		if err == nil {
+			t.Fatal("expected error for provider openai")
+		}
+		if !strings.Contains(err.Error(), "spec.model.provider") {
+			t.Fatalf("error must name the field, got: %v", err)
+		}
+	})
+
+	t.Run("google provider rejected", func(t *testing.T) {
+		s := base()
+		s.Model.Provider = "google"
+		if err := checkClaudeIncompatibilities(s); err == nil {
+			t.Fatal("expected error for provider google")
+		}
+	})
+
+	t.Run("extensions rejected", func(t *testing.T) {
+		s := base()
+		s.Extensions = []ResolvedRef{{Name: "audit-log"}}
+		err := checkClaudeIncompatibilities(s)
+		if err == nil || !strings.Contains(err.Error(), "spec.extensions") {
+			t.Fatalf("expected extensions rejection, got: %v", err)
+		}
+	})
+
+	t.Run("installs rejected", func(t *testing.T) {
+		s := base()
+		s.Installs = []string{"npm:pi-mcp-extension"}
+		err := checkClaudeIncompatibilities(s)
+		if err == nil || !strings.Contains(err.Error(), "spec.installs") {
+			t.Fatalf("expected installs rejection, got: %v", err)
+		}
+	})
+
+	t.Run("custom pi-extension tool rejected", func(t *testing.T) {
+		s := base()
+		s.Tools = []ResolvedRef{{Name: "get_time", Entrypoint: "/abs/get_time.js"}}
+		err := checkClaudeIncompatibilities(s)
+		if err == nil || !strings.Contains(err.Error(), "get_time") {
+			t.Fatalf("expected custom-tool rejection naming the tool, got: %v", err)
+		}
+	})
+
+	t.Run("builtin tools pass", func(t *testing.T) {
+		s := base()
+		s.Tools = []ResolvedRef{{Name: "bash", Builtin: true}}
+		if err := checkClaudeIncompatibilities(s); err != nil {
+			t.Fatalf("builtin tools must pass, got %v", err)
+		}
+	})
+
+	t.Run("subagents pass", func(t *testing.T) {
+		s := base()
+		s.Subagents = []ResolvedRef{{Name: "reviewer"}}
+		if err := checkClaudeIncompatibilities(s); err != nil {
+			t.Fatalf("subagents are supported on claude, got %v", err)
+		}
+	})
+
+	t.Run("registered in adapterCheckers", func(t *testing.T) {
+		if _, ok := adapterCheckers["local-claude"]; !ok {
+			t.Fatal("local-claude must be registered in adapterCheckers")
+		}
+	})
+}

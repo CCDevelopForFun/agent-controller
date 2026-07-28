@@ -68,6 +68,86 @@ func TestValidatorDispatchesByKind(t *testing.T) {
 	}
 }
 
+// TestValidatorAcceptsClaudeRuntimeBinding locks in the local-claude enum
+// entry added to selector.runtimeType alongside local/local-pi/local-opencode.
+// Task 6 fills in a claude column across the capability matrix, including
+// this RuntimeBinding row, so a binding selecting local-claude must validate.
+// Mirrors the local-pi bindingDoc in TestValidatorDispatchesByKind.
+func TestValidatorAcceptsClaudeRuntimeBinding(t *testing.T) {
+	v, err := NewValidator()
+	if err != nil {
+		t.Fatalf("NewValidator: %v", err)
+	}
+
+	bindingDoc := map[string]any{
+		"apiVersion": "agent-controller.dev/v1alpha1",
+		"kind":       "RuntimeBinding",
+		"metadata":   map[string]any{"name": "local-claude-default"},
+		"spec": map[string]any{
+			"selector": map[string]any{
+				"runtimeType": "local-claude",
+			},
+			"target": map[string]any{
+				"type": "local",
+			},
+		},
+	}
+	if err := v.Validate(bindingDoc); err != nil {
+		t.Errorf("valid RuntimeBinding with runtimeType local-claude rejected: %v", err)
+	}
+}
+
+// TestValidatorAcceptsCodexRuntimeBinding is the codex twin of the
+// local-claude case above. `local-codex` was missing from the
+// selector.runtimeType enum even though docs/architecture/harness-matrix.md
+// asserts `agentctl run --binding` works against codex-typed Agents, so a
+// perfectly valid codex binding failed validation.
+func TestValidatorAcceptsCodexRuntimeBinding(t *testing.T) {
+	v, err := NewValidator()
+	if err != nil {
+		t.Fatalf("NewValidator: %v", err)
+	}
+
+	bindingDoc := map[string]any{
+		"apiVersion": "agent-controller.dev/v1alpha1",
+		"kind":       "RuntimeBinding",
+		"metadata":   map[string]any{"name": "local-codex-default"},
+		"spec": map[string]any{
+			"selector": map[string]any{
+				"runtimeType": "local-codex",
+			},
+			"target": map[string]any{
+				"type": "local",
+			},
+		},
+	}
+	if err := v.Validate(bindingDoc); err != nil {
+		t.Errorf("valid RuntimeBinding with runtimeType local-codex rejected: %v", err)
+	}
+}
+
+// TestValidatorRejectsUnknownBindingRuntimeType guards the other direction:
+// widening the enum must not turn it into a free-form string.
+func TestValidatorRejectsUnknownBindingRuntimeType(t *testing.T) {
+	v, err := NewValidator()
+	if err != nil {
+		t.Fatalf("NewValidator: %v", err)
+	}
+
+	bindingDoc := map[string]any{
+		"apiVersion": "agent-controller.dev/v1alpha1",
+		"kind":       "RuntimeBinding",
+		"metadata":   map[string]any{"name": "bogus"},
+		"spec": map[string]any{
+			"selector": map[string]any{"runtimeType": "local-hermes"},
+			"target":   map[string]any{"type": "local"},
+		},
+	}
+	if err := v.Validate(bindingDoc); err == nil {
+		t.Errorf("expected error for unsupported selector.runtimeType=local-hermes")
+	}
+}
+
 func TestValidatorRejectsBindingMissingFields(t *testing.T) {
 	v, err := NewValidator()
 	if err != nil {

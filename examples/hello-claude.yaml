@@ -1,0 +1,23 @@
+apiVersion: agent-controller.dev/v1alpha1
+kind: Agent
+metadata:
+  name: hello-claude
+  owner: ccdevelopforfun
+  description: Claude Agent SDK hello-world agent (runtime.type local-claude)
+spec:
+  model:
+    provider: anthropic
+    name: claude-opus-4-6
+  persona:
+    role: Helpful demo assistant
+    instructions: |
+      Greet the user. Keep your response under 50 words.
+  task: |
+    Say hello and confirm you're running under the Claude Agent SDK adapter.
+  # The claude adapter maps Pi built-in tool names onto the SDK's own tools
+  # (bash -> Bash, read -> Read, edit -> Edit, write -> Write). Custom
+  # Pi-extension tools and spec.extensions[] are rejected at compile time.
+  # spec.subagents[] IS supported here (unlike codex) and registers natively.
+  tools: []
+  runtime:
+    type: local-claude

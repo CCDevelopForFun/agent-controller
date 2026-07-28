@@ -6,6 +6,32 @@ This project adheres to [Semantic Versioning](https://semver.org/) for the umbre
 
 ## [Unreleased]
 
+### Added — claude adapter (`runtime.type: local-claude`)
+
+Fourth runtime adapter for Agent Controller. Drives sessions through `@anthropic-ai/claude-agent-sdk` (pinned to `0.3.220`), making it the only adapter that needs no external CLI on `PATH`.
+
+**Key facts:**
+
+- **New `runtime.type: local-claude`** selector. Dispatched by the existing `resolveRuntimeCommand` path in `cli/cmd/agentctl/main.go`.
+- **New package `@agent-controller/runtime-claude`** (`runtime-claude/`). Calls the SDK's `query()` in-process; the SDK spawns its own bundled executable. Each `SDKMessage` is translated to the NDJSON wire-event stream via `event-translator.ts`.
+- **No external CLI required.** Unlike opencode (needs the `opencode` CLI) and codex (needs the `codex` CLI), this adapter only needs `ANTHROPIC_API_KEY` in the environment. `Options.env` is never set, so `ANTHROPIC_API_KEY` / `ANTHROPIC_BASE_URL` pass through from the process env.
+- **Anthropic-only.** `model.provider` must be `anthropic`; `openai` and `google` are rejected at compile time by `checkClaudeIncompatibilities` and again at adapter startup with a field-naming error. Bedrock / Vertex routing is deferred.
+- **Isolation: `settingSources: []`** is set unconditionally, so the SDK never loads `~/.claude/settings.json`, project `.claude/` config, or `CLAUDE.md` files. A spec's behavior does not depend on the operator's machine.
+- **Tools** (`spec.tools[]`). Pi built-ins map onto SDK tool names (`bash`→`Bash`, `read`→`Read`, `edit`→`Edit`, `write`→`Write`) and are set as `Options.tools`, which is the SDK's *restriction* list — a `tools: []` spec runs with zero built-in tools, matching Pi and opencode semantics. The same names go into `Options.allowedTools` so a non-interactive run does not stall on a permission prompt. An ADL built-in with no SDK equivalent throws instead of being dropped.
+- **Subagents** (`spec.subagents[]`). Parsed from `agents/<slug>.md` and registered natively via the SDK `agents` option. Declaring subagents also grants the `Agent` delegation tool, without which the registration would be unreachable. Supported here and on Pi/opencode; rejected by codex.
+- **Session resume** (`--resume`, `agentctl chat`, `agentctl serve`). agentctl session ids (`s_<hex>`) are not SDK session ids — `Options.sessionId` requires a UUID. The adapter derives a UUIDv5 from the agentctl id over a fixed namespace (implemented locally with `node:crypto`; no new dependency), sets it via `Options.sessionId` on the first turn, and passes the SDK session id captured from the `system`/`init` message to `Options.resume` on later turns. The captured id is persisted at `$XDG_DATA_HOME/agent-controller/claude-sessions/<derived-uuid>/sdk-session-id` because the adapter is a fresh process per turn.
+- **MCP servers** (`spec.mcpServers[]`). All three ADL transports map onto the SDK's config union: stdio → `{type:"stdio"}`, streamable-http → `{type:"http"}`, sse → `{type:"sse"}`. Each declared server is auto-approved with an `mcp__<server>` allow rule; servers not in the spec are never granted. `lifecycle: eager | lazy` is accepted by the schema and **ignored** — the SDK has no eager/lazy control.
+- **Skills** (`spec.skills[]`). SKILL.md bodies are read at startup, YAML frontmatter stripped, and inlined into the system prompt via `wrapSkillBody()`. Same "active by default" semantic as Pi, opencode, and codex. Native plugin-backed SDK skills are deferred.
+- **Guardrails** (`spec.guardrails`). `block` and `warn` behave identically to the other adapters. `correct` **degrades to `warn`** — a corrective re-prompt would need a second turn, which is out of scope for this single-shot adapter (same treatment codex gives it).
+- **No `model.request` / `model.response` events.** The SDK does not surface per-model-request events and synthesizing them would lose fidelity — the same gap opencode and codex have. Pi remains the only adapter emitting them.
+- **`model.temperature` is ignored.** The SDK has no temperature option; the field is accepted by the ADL schema and the adapter writes a note to stderr rather than failing.
+- **Rejected at adapter startup:** `spec.extensions[]`, `spec.installs[]`, custom Pi-extension tools (entrypoint set, `builtin` unset), non-`anthropic` providers.
+- **New example:** `examples/hello-claude.yaml` — minimal `runtime.type: local-claude`, `model.provider: anthropic`, persona + task, `tools: []`.
+- **`schemas/runtimebinding.v1alpha1.json`** `selector.runtimeType` gains `local-claude` (and `local-codex`, which had been missing).
+- **Harness matrix updated** (`docs/architecture/harness-matrix.md`) with a full claude column across all feature tables.
+
+**Prerequisites:** `ANTHROPIC_API_KEY` environment variable set. No separate CLI install.
+
 ### Added — codex adapter (`runtime.type: local-codex`)
 
 Third runtime adapter for Agent Controller. Drives sessions via the OpenAI `codex` CLI (`codex exec`), making it the only adapter in the project with a native sandbox.
