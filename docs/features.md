@@ -858,7 +858,7 @@ Tracked in [`docs/architecture/harness-matrix.md`](architecture/harness-matrix.m
 
 - [`README.md`](../README.md) — project overview + quickstart
 - [`ROADMAP.md`](../ROADMAP.md) — committed direction for v0.4 / v0.5+
-- [`docs/architecture/overview.md`](architecture/overview.md) — architecture + dual-adapter diagram + connection-flow
+- [`docs/architecture/overview.md`](architecture/overview.md) — architecture + multi-adapter diagram + connection-flow
 - [`docs/architecture/harness-matrix.md`](architecture/harness-matrix.md) — every-field per-adapter support table
 - [`docs/versioning.md`](versioning.md) — multi-dimensional version policy
 - [`CONTRIBUTING.md`](../CONTRIBUTING.md) — slice-by-slice workflow + ADL change checklist
