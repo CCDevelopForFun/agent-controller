@@ -158,6 +158,20 @@ const BUILTIN_TOOL_MAP: Record<string, string> = {
 const SUBAGENT_DELEGATION_TOOL = "Agent";
 
 /**
+ * The built-in tool through which MCP tool schemas are discovered.
+ *
+ * The SDK does not put a declared MCP server's tools in the model's initial tool
+ * catalog — they are deferred, and the model has to call this tool to load their
+ * schemas before it can invoke any of them. Observed directly: every successful
+ * MCP call is preceded by a `ToolSearch` call, and `system/init` reports
+ * `mcp_servers: [{status: "pending"}]` with no `mcp__*` entry in `tools`.
+ *
+ * It is therefore a hard dependency of `spec.mcpServers[]`, not a convenience:
+ * without it the declared servers connect but are unreachable.
+ */
+const MCP_TOOL_DISCOVERY_TOOL = "ToolSearch";
+
+/**
  * Map the spec's Pi built-in tools onto SDK tool names, preserving spec order.
  *
  * Non-built-ins are skipped: custom Pi-extension tools (entrypoint set) are
@@ -349,9 +363,18 @@ export function buildOptions(
   // `grants["task"] = "allow"` when the spec declares subagents.
   if (Object.keys(subagents).length > 0) granted.push(SUBAGENT_DELEGATION_TOOL);
 
+  const servers = spec.mcpServers ?? [];
+
+  // Declaring MCP servers has to grant the tool their schemas are discovered through,
+  // for the same reason subagents grant their delegation tool: otherwise the capability
+  // the spec declares is silently unreachable. `Options.tools` is a restriction, so a
+  // `tools: []` spec — the normal shape for an MCP-only agent — disables every built-in
+  // including this one. The model then cannot see the declared tools at all and, asked to
+  // use them, fabricates tool-call syntax in prose instead of calling anything.
+  if (servers.length > 0) granted.push(MCP_TOOL_DISCOVERY_TOOL);
+
   opts.tools = granted;
 
-  const servers = spec.mcpServers ?? [];
   const allowed = [...granted, ...servers.map((srv) => mcpServerAllowRule(srv.name))];
   opts.allowedTools = allowed;
 

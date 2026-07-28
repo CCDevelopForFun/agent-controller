@@ -178,10 +178,11 @@ describe("buildOptions", () => {
       ],
     });
     const o = buildOptions(s, "sys", {});
-    expect(o.allowedTools).toEqual(["mcp__time", "mcp__docs"]);
+    expect(o.allowedTools).toEqual(["ToolSearch", "mcp__time", "mcp__docs"]);
     expect(o.allowedTools).not.toContain("mcp__other");
-    // MCP tools are not built-ins, so the restriction list stays empty.
-    expect(o.tools).toEqual([]);
+    // MCP tools are not built-ins, but the tool their schemas are discovered through
+    // is, so the restriction list carries it.
+    expect(o.tools).toEqual(["ToolSearch"]);
   });
 
   it("normalizes MCP server names the SDK would rewrite, so the grant still matches", () => {
@@ -189,7 +190,29 @@ describe("buildOptions", () => {
       mcpServers: [{ name: "my.server", transport: "stdio", command: "npx" }],
     });
     const o = buildOptions(s, "sys", {});
-    expect(o.allowedTools).toEqual(["mcp__my_server"]);
+    expect(o.allowedTools).toEqual(["ToolSearch", "mcp__my_server"]);
+  });
+
+  // Regression: a `tools: []` + mcpServers spec (the normal shape for an MCP-only agent)
+  // used to disable every built-in, ToolSearch included, leaving the declared MCP tools
+  // undiscoverable. The model could not see them and fabricated tool-call syntax in prose.
+  it("grants the MCP discovery tool whenever the spec declares MCP servers", () => {
+    const s = baseSpec({
+      tools: [],
+      mcpServers: [{ name: "test-kragle-mcp", transport: "streamable-http", url: "https://x/mcp" }],
+    });
+    const o = buildOptions(s, "sys", {});
+    expect(o.tools).toContain("ToolSearch");
+    expect(o.allowedTools).toContain("ToolSearch");
+    // The server grant keeps hyphens: the SDK normalizes only [^a-zA-Z0-9_-], and the real
+    // tool name is mcp__test-kragle-mcp__<tool>.
+    expect(o.allowedTools).toContain("mcp__test-kragle-mcp");
+  });
+
+  it("does not grant the MCP discovery tool when no MCP servers are declared", () => {
+    const o = buildOptions(baseSpec({ tools: [] }), "sys", {});
+    expect(o.tools).toEqual([]);
+    expect(o.allowedTools).toEqual([]);
   });
 
   it("throws for an MCP server name that is ambiguous under the mcp__ rule grammar", () => {
