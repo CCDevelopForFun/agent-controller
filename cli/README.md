@@ -78,4 +78,4 @@ Example failure mode: `cd cli && bin/agentctl run ../examples/hello.yaml` fails.
 | `internal/registry` | Tool / extension / skill / subagent manifest discovery + resolution |
 | `internal/wire` | Wire-event envelope types + JSON decoder |
 
-See [`../docs/architecture/overview.md`](../docs/architecture/overview.md) for the dual-adapter architecture diagram.
+See [`../docs/architecture/overview.md`](../docs/architecture/overview.md) for the multi-adapter architecture diagram.
