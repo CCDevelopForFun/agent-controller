@@ -127,11 +127,19 @@
           "type": "arrow"
         },
         {
-          "id": "T6t8aqAjeLA2gMqJzOZH",
+          "id": "ArrowIn0xxxxxxxxxxxx",
           "type": "arrow"
         },
         {
-          "id": "tXjkc7UHEPtsYtivUP3m",
+          "id": "ArrowIn1xxxxxxxxxxxx",
+          "type": "arrow"
+        },
+        {
+          "id": "ArrowIn2xxxxxxxxxxxx",
+          "type": "arrow"
+        },
+        {
+          "id": "ArrowIn3xxxxxxxxxxxx",
           "type": "arrow"
         }
       ],
@@ -147,7 +155,7 @@
       "y": 204.5,
       "width": 400,
       "height": 23,
-      "text": "agentctl\nvalidate \u00b7 compile \u00b7 run \u00b7 chat \u00b7 sessions",
+      "text": "agentctl\nvalidate · compile · run · chat · sessions",
       "fontSize": 15,
       "fontFamily": 2,
       "textAlign": "center",
@@ -167,16 +175,16 @@
       "link": null,
       "locked": false,
       "containerId": "FKCkVRfn93ZCPZuQpJTJ",
-      "originalText": "agentctl\nvalidate \u00b7 compile \u00b7 run \u00b7 chat \u00b7 sessions",
+      "originalText": "agentctl\nvalidate · compile · run · chat · sessions",
       "lineHeight": 1.25,
       "seed": 709471139
     },
     {
-      "id": "VUWLdRfRaRiBv1uyotym",
+      "id": "AdapterRect0xxxxxxxx",
       "type": "rectangle",
-      "x": 130,
+      "x": 126,
       "y": 322,
-      "width": 240,
+      "width": 143,
       "height": 74,
       "strokeColor": "#1971c2",
       "backgroundColor": "#d0ebff",
@@ -192,31 +200,145 @@
       },
       "boundElements": [
         {
-          "id": "dszMC5JSjPO3s9yQAWQ7",
+          "id": "AdapterText0xxxxxxxx",
           "type": "text"
         },
         {
-          "id": "T6t8aqAjeLA2gMqJzOZH",
+          "id": "ArrowIn0xxxxxxxxxxxx",
           "type": "arrow"
         },
         {
-          "id": "AWoE20WGt8fFdI5Mk7Mv",
+          "id": "ArrowOut0xxxxxxxxxxx",
           "type": "arrow"
         }
       ],
       "updated": 1,
       "link": null,
       "locked": false,
-      "seed": 664987603
+      "seed": 700000
     },
     {
-      "id": "dszMC5JSjPO3s9yQAWQ7",
+      "id": "AdapterRect1xxxxxxxx",
+      "type": "rectangle",
+      "x": 280,
+      "y": 322,
+      "width": 143,
+      "height": 74,
+      "strokeColor": "#1971c2",
+      "backgroundColor": "#d0ebff",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roughness": 0,
+      "opacity": 100,
+      "angle": 0,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": {
+        "type": 3
+      },
+      "boundElements": [
+        {
+          "id": "AdapterText1xxxxxxxx",
+          "type": "text"
+        },
+        {
+          "id": "ArrowIn1xxxxxxxxxxxx",
+          "type": "arrow"
+        },
+        {
+          "id": "ArrowOut1xxxxxxxxxxx",
+          "type": "arrow"
+        }
+      ],
+      "updated": 1,
+      "link": null,
+      "locked": false,
+      "seed": 700001
+    },
+    {
+      "id": "AdapterRect2xxxxxxxx",
+      "type": "rectangle",
+      "x": 434,
+      "y": 322,
+      "width": 143,
+      "height": 74,
+      "strokeColor": "#1971c2",
+      "backgroundColor": "#d0ebff",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roughness": 0,
+      "opacity": 100,
+      "angle": 0,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": {
+        "type": 3
+      },
+      "boundElements": [
+        {
+          "id": "AdapterText2xxxxxxxx",
+          "type": "text"
+        },
+        {
+          "id": "ArrowIn2xxxxxxxxxxxx",
+          "type": "arrow"
+        },
+        {
+          "id": "ArrowOut2xxxxxxxxxxx",
+          "type": "arrow"
+        }
+      ],
+      "updated": 1,
+      "link": null,
+      "locked": false,
+      "seed": 700002
+    },
+    {
+      "id": "AdapterRect3xxxxxxxx",
+      "type": "rectangle",
+      "x": 588,
+      "y": 322,
+      "width": 143,
+      "height": 74,
+      "strokeColor": "#1971c2",
+      "backgroundColor": "#d0ebff",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roughness": 0,
+      "opacity": 100,
+      "angle": 0,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": {
+        "type": 3
+      },
+      "boundElements": [
+        {
+          "id": "AdapterText3xxxxxxxx",
+          "type": "text"
+        },
+        {
+          "id": "ArrowIn3xxxxxxxxxxxx",
+          "type": "arrow"
+        },
+        {
+          "id": "ArrowOut3xxxxxxxxxxx",
+          "type": "arrow"
+        }
+      ],
+      "updated": 1,
+      "link": null,
+      "locked": false,
+      "seed": 700003
+    },
+    {
+      "id": "AdapterText0xxxxxxxx",
       "type": "text",
-      "x": 140,
+      "x": 136,
       "y": 348.0,
-      "width": 220,
+      "width": 123,
       "height": 22,
-      "text": "Pi adapter\n@agent-controller/runtime",
+      "text": "Pi\nlocal-pi",
       "fontSize": 14,
       "fontFamily": 2,
       "textAlign": "center",
@@ -235,57 +357,19 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "containerId": "VUWLdRfRaRiBv1uyotym",
-      "originalText": "Pi adapter\n@agent-controller/runtime",
+      "containerId": "AdapterRect0xxxxxxxx",
+      "originalText": "Pi\nlocal-pi",
       "lineHeight": 1.25,
-      "seed": 294947465
+      "seed": 800000
     },
     {
-      "id": "EayK0gAVlAdtzt76MTNR",
-      "type": "rectangle",
-      "x": 430,
-      "y": 322,
-      "width": 300,
-      "height": 74,
-      "strokeColor": "#1971c2",
-      "backgroundColor": "#d0ebff",
-      "fillStyle": "solid",
-      "strokeWidth": 2,
-      "roughness": 0,
-      "opacity": 100,
-      "angle": 0,
-      "groupIds": [],
-      "frameId": null,
-      "roundness": {
-        "type": 3
-      },
-      "boundElements": [
-        {
-          "id": "9Z7qaV7UWldgxSoasrWG",
-          "type": "text"
-        },
-        {
-          "id": "tXjkc7UHEPtsYtivUP3m",
-          "type": "arrow"
-        },
-        {
-          "id": "LXuUQ4zpwiJ5IfzpFxNa",
-          "type": "arrow"
-        }
-      ],
-      "updated": 1,
-      "link": null,
-      "locked": false,
-      "seed": 788252789
-    },
-    {
-      "id": "9Z7qaV7UWldgxSoasrWG",
+      "id": "AdapterText1xxxxxxxx",
       "type": "text",
-      "x": 440,
+      "x": 290,
       "y": 348.0,
-      "width": 280,
+      "width": 123,
       "height": 22,
-      "text": "opencode adapter\n@agent-controller/runtime-opencode",
+      "text": "opencode\nlocal-opencode",
       "fontSize": 14,
       "fontFamily": 2,
       "textAlign": "center",
@@ -304,10 +388,72 @@
       "updated": 1,
       "link": null,
       "locked": false,
-      "containerId": "EayK0gAVlAdtzt76MTNR",
-      "originalText": "opencode adapter\n@agent-controller/runtime-opencode",
+      "containerId": "AdapterRect1xxxxxxxx",
+      "originalText": "opencode\nlocal-opencode",
       "lineHeight": 1.25,
-      "seed": 959164595
+      "seed": 800001
+    },
+    {
+      "id": "AdapterText2xxxxxxxx",
+      "type": "text",
+      "x": 444,
+      "y": 348.0,
+      "width": 123,
+      "height": 22,
+      "text": "codex\nlocal-codex",
+      "fontSize": 14,
+      "fontFamily": 2,
+      "textAlign": "center",
+      "verticalAlign": "middle",
+      "strokeColor": "#212529",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "roughness": 1,
+      "opacity": 100,
+      "angle": 0,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "boundElements": [],
+      "updated": 1,
+      "link": null,
+      "locked": false,
+      "containerId": "AdapterRect2xxxxxxxx",
+      "originalText": "codex\nlocal-codex",
+      "lineHeight": 1.25,
+      "seed": 800002
+    },
+    {
+      "id": "AdapterText3xxxxxxxx",
+      "type": "text",
+      "x": 598,
+      "y": 348.0,
+      "width": 123,
+      "height": 22,
+      "text": "claude\nlocal-claude",
+      "fontSize": 14,
+      "fontFamily": 2,
+      "textAlign": "center",
+      "verticalAlign": "middle",
+      "strokeColor": "#212529",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "roughness": 1,
+      "opacity": 100,
+      "angle": 0,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "boundElements": [],
+      "updated": 1,
+      "link": null,
+      "locked": false,
+      "containerId": "AdapterRect3xxxxxxxx",
+      "originalText": "claude\nlocal-claude",
+      "lineHeight": 1.25,
+      "seed": 800003
     },
     {
       "id": "CSur4twXVAnz9lMh4nIt",
@@ -334,11 +480,19 @@
           "type": "text"
         },
         {
-          "id": "AWoE20WGt8fFdI5Mk7Mv",
+          "id": "ArrowOut0xxxxxxxxxxx",
           "type": "arrow"
         },
         {
-          "id": "LXuUQ4zpwiJ5IfzpFxNa",
+          "id": "ArrowOut1xxxxxxxxxxx",
+          "type": "arrow"
+        },
+        {
+          "id": "ArrowOut2xxxxxxxxxxx",
+          "type": "arrow"
+        },
+        {
+          "id": "ArrowOut3xxxxxxxxxxx",
           "type": "arrow"
         }
       ],
@@ -354,7 +508,7 @@
       "y": 491.5,
       "width": 340,
       "height": 23,
-      "text": "LLM Providers\nAnthropic \u00b7 OpenAI \u00b7 Google",
+      "text": "LLM Providers\nAnthropic · OpenAI · Google",
       "fontSize": 15,
       "fontFamily": 2,
       "textAlign": "center",
@@ -374,7 +528,7 @@
       "link": null,
       "locked": false,
       "containerId": "CSur4twXVAnz9lMh4nIt",
-      "originalText": "LLM Providers\nAnthropic \u00b7 OpenAI \u00b7 Google",
+      "originalText": "LLM Providers\nAnthropic · OpenAI · Google",
       "lineHeight": 1.25,
       "seed": 257050259
     },
@@ -419,7 +573,7 @@
       "y": 347.5,
       "width": 220,
       "height": 23,
-      "text": "Local Registry\ntools \u00b7 extensions \u00b7 skills\nagents \u00b7 MCP servers",
+      "text": "Local Registry\ntools · extensions · skills\nagents · MCP servers",
       "fontSize": 15,
       "fontFamily": 2,
       "textAlign": "center",
@@ -439,7 +593,7 @@
       "link": null,
       "locked": false,
       "containerId": "kTaTg3TwsEcz52naZBtZ",
-      "originalText": "Local Registry\ntools \u00b7 extensions \u00b7 skills\nagents \u00b7 MCP servers",
+      "originalText": "Local Registry\ntools · extensions · skills\nagents · MCP servers",
       "lineHeight": 1.25,
       "seed": 318941474
     },
@@ -491,11 +645,11 @@
       "seed": 907361587
     },
     {
-      "id": "T6t8aqAjeLA2gMqJzOZH",
+      "id": "ArrowIn0xxxxxxxxxxxx",
       "type": "arrow",
-      "x": 360,
+      "x": 290,
       "y": 256,
-      "width": 110,
+      "width": 92.5,
       "height": 66,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -519,7 +673,7 @@
           0
         ],
         [
-          -110,
+          -92.5,
           66
         ]
       ],
@@ -529,20 +683,20 @@
         "gap": 5
       },
       "endBinding": {
-        "elementId": "VUWLdRfRaRiBv1uyotym",
+        "elementId": "AdapterRect0xxxxxxxx",
         "focus": 0,
         "gap": 5
       },
       "startArrowhead": null,
       "endArrowhead": "arrow",
-      "seed": 110674801
+      "seed": 900000
     },
     {
-      "id": "tXjkc7UHEPtsYtivUP3m",
+      "id": "ArrowIn1xxxxxxxxxxxx",
       "type": "arrow",
-      "x": 470,
+      "x": 370,
       "y": 256,
-      "width": 110,
+      "width": 18.5,
       "height": 66,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -566,7 +720,7 @@
           0
         ],
         [
-          110,
+          -18.5,
           66
         ]
       ],
@@ -576,20 +730,114 @@
         "gap": 5
       },
       "endBinding": {
-        "elementId": "EayK0gAVlAdtzt76MTNR",
+        "elementId": "AdapterRect1xxxxxxxx",
         "focus": 0,
         "gap": 5
       },
       "startArrowhead": null,
       "endArrowhead": "arrow",
-      "seed": 976795862
+      "seed": 900001
     },
     {
-      "id": "AWoE20WGt8fFdI5Mk7Mv",
+      "id": "ArrowIn2xxxxxxxxxxxx",
       "type": "arrow",
-      "x": 250,
+      "x": 450,
+      "y": 256,
+      "width": 55.5,
+      "height": 66,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roughness": 0,
+      "opacity": 100,
+      "angle": 0,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": {
+        "type": 2
+      },
+      "boundElements": [],
+      "updated": 1,
+      "link": null,
+      "locked": false,
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          55.5,
+          66
+        ]
+      ],
+      "startBinding": {
+        "elementId": "FKCkVRfn93ZCPZuQpJTJ",
+        "focus": 0,
+        "gap": 5
+      },
+      "endBinding": {
+        "elementId": "AdapterRect2xxxxxxxx",
+        "focus": 0,
+        "gap": 5
+      },
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "seed": 900002
+    },
+    {
+      "id": "ArrowIn3xxxxxxxxxxxx",
+      "type": "arrow",
+      "x": 530,
+      "y": 256,
+      "width": 129.5,
+      "height": 66,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roughness": 0,
+      "opacity": 100,
+      "angle": 0,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": {
+        "type": 2
+      },
+      "boundElements": [],
+      "updated": 1,
+      "link": null,
+      "locked": false,
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          129.5,
+          66
+        ]
+      ],
+      "startBinding": {
+        "elementId": "FKCkVRfn93ZCPZuQpJTJ",
+        "focus": 0,
+        "gap": 5
+      },
+      "endBinding": {
+        "elementId": "AdapterRect3xxxxxxxx",
+        "focus": 0,
+        "gap": 5
+      },
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "seed": 900003
+    },
+    {
+      "id": "ArrowOut0xxxxxxxxxxx",
+      "type": "arrow",
+      "x": 197.5,
       "y": 396,
-      "width": 110,
+      "width": 132.5,
       "height": 74,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -613,12 +861,12 @@
           0
         ],
         [
-          110,
+          132.5,
           74
         ]
       ],
       "startBinding": {
-        "elementId": "VUWLdRfRaRiBv1uyotym",
+        "elementId": "AdapterRect0xxxxxxxx",
         "focus": 0,
         "gap": 5
       },
@@ -629,14 +877,14 @@
       },
       "startArrowhead": null,
       "endArrowhead": "arrow",
-      "seed": 28647404
+      "seed": 910000
     },
     {
-      "id": "LXuUQ4zpwiJ5IfzpFxNa",
+      "id": "ArrowOut1xxxxxxxxxxx",
       "type": "arrow",
-      "x": 580,
+      "x": 351.5,
       "y": 396,
-      "width": 110,
+      "width": 33.5,
       "height": 74,
       "strokeColor": "#1e1e1e",
       "backgroundColor": "transparent",
@@ -660,12 +908,12 @@
           0
         ],
         [
-          -110,
+          33.5,
           74
         ]
       ],
       "startBinding": {
-        "elementId": "EayK0gAVlAdtzt76MTNR",
+        "elementId": "AdapterRect1xxxxxxxx",
         "focus": 0,
         "gap": 5
       },
@@ -676,7 +924,101 @@
       },
       "startArrowhead": null,
       "endArrowhead": "arrow",
-      "seed": 719024541
+      "seed": 910001
+    },
+    {
+      "id": "ArrowOut2xxxxxxxxxxx",
+      "type": "arrow",
+      "x": 505.5,
+      "y": 396,
+      "width": 60.5,
+      "height": 74,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roughness": 0,
+      "opacity": 100,
+      "angle": 0,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": {
+        "type": 2
+      },
+      "boundElements": [],
+      "updated": 1,
+      "link": null,
+      "locked": false,
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          -60.5,
+          74
+        ]
+      ],
+      "startBinding": {
+        "elementId": "AdapterRect2xxxxxxxx",
+        "focus": 0,
+        "gap": 5
+      },
+      "endBinding": {
+        "elementId": "CSur4twXVAnz9lMh4nIt",
+        "focus": 0,
+        "gap": 5
+      },
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "seed": 910002
+    },
+    {
+      "id": "ArrowOut3xxxxxxxxxxx",
+      "type": "arrow",
+      "x": 659.5,
+      "y": 396,
+      "width": 159.5,
+      "height": 74,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roughness": 0,
+      "opacity": 100,
+      "angle": 0,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": {
+        "type": 2
+      },
+      "boundElements": [],
+      "updated": 1,
+      "link": null,
+      "locked": false,
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          -159.5,
+          74
+        ]
+      ],
+      "startBinding": {
+        "elementId": "AdapterRect3xxxxxxxx",
+        "focus": 0,
+        "gap": 5
+      },
+      "endBinding": {
+        "elementId": "CSur4twXVAnz9lMh4nIt",
+        "focus": 0,
+        "gap": 5
+      },
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "seed": 910003
     },
     {
       "id": "czOvOkOzUF4bRpSVbn7L",
@@ -800,7 +1142,7 @@
       "y": 54,
       "width": 324.0,
       "height": 23,
-      "text": "one declarative spec  \u00b7  any runtime",
+      "text": "one declarative spec  ·  any runtime",
       "fontSize": 15,
       "fontFamily": 2,
       "textAlign": "left",
@@ -820,7 +1162,7 @@
       "link": null,
       "locked": false,
       "containerId": null,
-      "originalText": "one declarative spec  \u00b7  any runtime",
+      "originalText": "one declarative spec  ·  any runtime",
       "lineHeight": 1.25,
       "seed": 140667903
     },
@@ -831,7 +1173,7 @@
       "y": 280,
       "width": 218.4,
       "height": 21,
-      "text": "stdio \u00b7 NDJSON wire protocol",
+      "text": "stdio · NDJSON wire protocol",
       "fontSize": 13,
       "fontFamily": 2,
       "textAlign": "left",
@@ -851,7 +1193,7 @@
       "link": null,
       "locked": false,
       "containerId": null,
-      "originalText": "stdio \u00b7 NDJSON wire protocol",
+      "originalText": "stdio · NDJSON wire protocol",
       "lineHeight": 1.25,
       "seed": 114867405
     }

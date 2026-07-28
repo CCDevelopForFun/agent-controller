@@ -65,6 +65,8 @@ flowchart LR
     spec --> dispatch{{"agentctl run<br/>resolveRuntimeCommand"}}
     dispatch -->|"runtime.type:<br/>local · local-pi"| pi
     dispatch -->|"runtime.type:<br/>local-opencode"| oc
+    dispatch -->|"runtime.type:<br/>local-codex"| cx
+    dispatch -->|"runtime.type:<br/>local-claude"| cl
 
     subgraph pi["runtime/ (Pi adapter)"]
       pa["Pi session<br/>via createAgentSession"]
@@ -78,8 +80,22 @@ flowchart LR
       oa --> oe
     end
 
+    subgraph cx["runtime-codex/ (codex adapter)"]
+      xa["codex exec subprocess<br/>per-session CODEX_HOME"]
+      xe["JSONL event translator<br/>codex lines → wire"]
+      xa --> xe
+    end
+
+    subgraph cl["runtime-claude/ (claude adapter)"]
+      ca["Claude Agent SDK query()<br/>in-process, settingSources: []"]
+      ce["SDKMessage event translator<br/>SDK messages → wire"]
+      ca --> ce
+    end
+
     pe --> wire(["Wire events (NDJSON, identical schema)"]):::data
     oe --> wire
+    xe --> wire
+    ce --> wire
 
     classDef data fill:#fff5e1,stroke:#e8590c,stroke-width:1px,color:#000
 ```
@@ -114,9 +130,13 @@ See [harness-matrix.md](./harness-matrix.md) for the per-feature support table.
 | `agentctl` (Go) | YAML parsing, schema validation, manifest resolution, CompiledSpec compilation, subprocess management, signal handling, pretty-printing, exit codes, **adapter dispatch** | LLM calls, tool execution, adapter internals |
 | `runtime/` (Pi adapter) | Pi session lifecycle, resource loader construction, event translation to wire format, persona/temperature injection, hallucination detection | YAML parsing, schema validation, transport choice |
 | `runtime-opencode/` (opencode adapter) | opencode subprocess lifecycle, opencode config generation, SSE event translation, ADL-allowlist enforcement on opencode permissions, hallucination detection (mirrored from Pi adapter) | YAML parsing, schema validation, Pi extension semantics |
+| `runtime-codex/` (codex adapter) | `codex exec` subprocess lifecycle, per-session `CODEX_HOME` seeding + `thread_id` persistence, `config.toml` generation for MCP, JSONL event translation, hallucination detection (mirrored from Pi adapter) | YAML parsing, schema validation, Pi extension semantics, sandbox policy (codex owns it) |
+| `runtime-claude/` (claude adapter) | Claude Agent SDK `query()` lifecycle (in-process), `Options` construction incl. ADL-allowlist enforcement via `tools`, agentctl↔SDK session-id bridging, `SDKMessage` event translation, hallucination detection (mirrored from Pi adapter) | YAML parsing, schema validation, Pi extension semantics, model auth (the SDK reads `ANTHROPIC_API_KEY` itself) |
 | `Pi` (external dep, Pi adapter only) | Agent loop, tool dispatch, extension hook bus, model auth, streaming | ADL semantics, governance metadata |
 | `opencode` (external dep, opencode adapter only) | Agent loop, tool dispatch (built-ins + MCP), native subagent invocation, model auth | ADL semantics, ADL allowlist contract |
-| Registry manifests | Tool / extension metadata, entrypoint files, JSON Schemas for inputs/configs | Pi/opencode internals, runtime decisions |
+| `codex` (external CLI, codex adapter only) | Agent loop, tool dispatch, `workspace-write` sandbox, model auth | ADL semantics, ADL allowlist contract |
+| `@anthropic-ai/claude-agent-sdk` (library dep, claude adapter only) | Agent loop, built-in tool dispatch, native subagent delegation, skills/MCP wiring, permission prompts, session transcripts. Bundles its own executable — **no external CLI on `PATH`** | ADL semantics, ADL allowlist contract |
+| Registry manifests | Tool / extension metadata, entrypoint files, JSON Schemas for inputs/configs | Adapter internals, runtime decisions |
 
 ## Wire protocol
 
