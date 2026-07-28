@@ -13,10 +13,6 @@
  * Wire protocol contract: cli/internal/wire/events.go
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
-
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Options } from "@anthropic-ai/claude-agent-sdk";
 import type { CompiledSpec, HallucinationMode } from "./types.js";
@@ -28,52 +24,30 @@ import {
   buildSubagents,
   deriveSdkSessionUuid,
 } from "./claude-invocation.js";
+import {
+  persistSdkSessionId,
+  readPersistedSdkSessionId,
+  sdkSessionStateDir,
+} from "./claude-session.js";
 import { readSkillBodies, readSubagentBodies } from "./registry.js";
 import { createTranslatorState, translateSdkMessage } from "./event-translator.js";
 
 const write = (s: string): void => void process.stdout.write(s);
 
-// ── SDK session-id persistence ────────────────────────────────────────────────
-//
-// The adapter is a fresh process per turn (cli/internal/serve/run_turn.go and
-// cli/cmd/agentctl/chat.go both re-dispatch with spec.SessionID set), so
-// "have I seen this agentctl session before?" cannot live in memory. Mirrors
-// runtime-codex's `$CODEX_HOME/.agentctl-thread-id` file.
-//
-// The directory is keyed by the derived UUID rather than the raw agentctl id
-// so no unvalidated spec string ever reaches a path component.
-
-const SDK_SESSION_ID_FILENAME = "sdk-session-id";
-
-function sdkSessionStateDir(derivedUuid: string): string {
-  const base = process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share");
-  return join(base, "agent-controller", "claude-sessions", derivedUuid);
-}
-
-/** Read the SDK session id captured on a previous turn, if any. */
-function readPersistedSdkSessionId(dir: string): string | undefined {
-  const file = join(dir, SDK_SESSION_ID_FILENAME);
-  if (!existsSync(file)) return undefined;
-  try {
-    return readFileSync(file, "utf8").trim() || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 /**
- * Persist the SDK session id for the next turn. Non-fatal on failure: the
- * next turn falls back to the deterministic first-turn id.
+ * Record an SDK session id for later turns, warning on stderr if the write
+ * fails. Not fatal: a one-shot run with no spec.sessionId never needs the
+ * file. But the write is load-bearing when a session id IS set — see the
+ * WRITE ORDERING note in claude-session.ts — so a failure must not be silent.
  */
-function persistSdkSessionId(dir: string, sdkSessionId: string): void {
-  try {
-    mkdirSync(dir, { recursive: true, mode: 0o700 });
-    writeFileSync(join(dir, SDK_SESSION_ID_FILENAME), sdkSessionId, {
-      encoding: "utf8",
-      mode: 0o600,
-    });
-  } catch {
-    // Non-fatal.
+function recordSdkSessionId(dir: string, sdkSessionId: string): void {
+  const res = persistSdkSessionId(dir, sdkSessionId);
+  if (!res.ok) {
+    process.stderr.write(
+      `[runtime-claude] WARNING: could not record the SDK session id at ` +
+        `${res.file}: ${res.reason}. Later turns of this session will not be ` +
+        `able to resume it.\n`,
+    );
   }
 }
 
@@ -150,8 +124,14 @@ async function main(): Promise<void> {
 
     let resumeSdkSessionId: string | undefined;
     if (spec.sessionId) {
-      sessionStateDir = sdkSessionStateDir(deriveSdkSessionUuid(spec.sessionId));
+      const derived = deriveSdkSessionUuid(spec.sessionId);
+      sessionStateDir = sdkSessionStateDir(derived);
       resumeSdkSessionId = readPersistedSdkSessionId(sessionStateDir);
+      // First turn: record the id BEFORE query() can create its transcript.
+      // Recording it afterwards permanently bricks the session if the process
+      // dies in between — the SDK refuses to reuse a session id whose
+      // transcript exists. See claude-session.ts's WRITE ORDERING note.
+      if (!resumeSdkSessionId) recordSdkSessionId(sessionStateDir, derived);
     }
 
     options = buildOptions(spec, systemPrompt, subagents, resumeSdkSessionId);
@@ -192,11 +172,14 @@ async function main(): Promise<void> {
     process.exitCode = 1;
     return;
   } finally {
-    // Record the SDK's own session id so the next turn resumes it instead of
-    // starting over. Runs on the error and fatal paths too — the transcript
-    // exists either way, and losing the id would silently fork the session.
+    // Self-healing refinement, not the primary mechanism: the id was already
+    // recorded before query() ran, and the SDK echoes Options.sessionId back on
+    // `init`, so this is normally a no-op (persistSdkSessionId skips a rewrite
+    // of the same value). It only does work if the SDK ever adopts an id other
+    // than the one we asked for, in which case that id is what later turns must
+    // resume. Runs on the error and fatal paths too.
     if (sessionStateDir && state.sdkSessionId) {
-      persistSdkSessionId(sessionStateDir, state.sdkSessionId);
+      recordSdkSessionId(sessionStateDir, state.sdkSessionId);
     }
   }
 
