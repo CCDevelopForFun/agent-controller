@@ -1,5 +1,5 @@
 import { createAgentSession, DefaultResourceLoader, SessionManager, getAgentDir } from "@earendil-works/pi-coding-agent";
-import { getModel } from "@earendil-works/pi-ai";
+import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
 import { join, basename, resolve, dirname } from "node:path";
 import { mkdirSync, writeFileSync, existsSync, readFileSync, copyFileSync, realpathSync, readdirSync, unlinkSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -794,10 +794,10 @@ export async function runSession(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let model: any = resolveFakeModelIfRequested();
   if (!model) {
-    // getModel uses branded literal generics; cast provider/name to `any`
+    // getBuiltinModel uses branded literal generics; cast provider/name to `any`
     // since at runtime they come from user YAML and cannot be statically typed.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    model = getModel(spec.model.provider as any, spec.model.name as any) as any;
+    model = getBuiltinModel(spec.model.provider as any, spec.model.name as any) as any;
   }
   if (!model) {
     throw new Error(

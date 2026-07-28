@@ -103,22 +103,38 @@ async function loadFauxModule(): Promise<FauxModuleShape> {
   if (cachedFauxModule) return cachedFauxModule;
   const here = dirname(fileURLToPath(import.meta.url));
   const runtimeRoot = resolve(here, "..", ".."); // runtime/src/testing → runtime/
+  // pi-ai moved registerFauxProvider/unregisterApiProviders out of
+  // providers/faux.js into compat.js (0.82.x); the faux* helpers are exported from
+  // both. Load whichever of the two exists and merge, compat last so it wins, so
+  // this keeps working on either layout.
+  const nested = "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist";
+  const direct = "node_modules/@earendil-works/pi-ai/dist";
   const candidates = [
-    resolve(
-      runtimeRoot,
-      "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/providers/faux.js",
-    ),
-    resolve(runtimeRoot, "node_modules/@earendil-works/pi-ai/dist/providers/faux.js"),
+    resolve(runtimeRoot, `${nested}/providers/faux.js`),
+    resolve(runtimeRoot, `${direct}/providers/faux.js`),
+    resolve(runtimeRoot, `${nested}/compat.js`),
+    resolve(runtimeRoot, `${direct}/compat.js`),
   ];
-  const found = candidates.find((p) => existsSync(p));
-  if (!found) {
+  const found = candidates.filter((p) => existsSync(p));
+  if (!found.length) {
     throw new Error(
-      "fake-provider: could not locate pi-ai's faux.js under runtime/node_modules. " +
-      "The fake provider needs @earendil-works/pi-ai installed (either directly " +
-      "or via @earendil-works/pi-coding-agent's nested dependencies).",
+      "fake-provider: could not locate pi-ai's faux.js or compat.js under " +
+      "runtime/node_modules. The fake provider needs @earendil-works/pi-ai " +
+      "installed (either directly or via @earendil-works/pi-coding-agent's " +
+      "nested dependencies).",
     );
   }
-  cachedFauxModule = (await import(pathToFileURL(found).href)) as FauxModuleShape;
+  const merged: Record<string, unknown> = {};
+  for (const path of found) {
+    Object.assign(merged, await import(pathToFileURL(path).href));
+  }
+  if (typeof merged.registerFauxProvider !== "function") {
+    throw new Error(
+      "fake-provider: pi-ai exposed no registerFauxProvider in " +
+      `${found.join(", ")}. The faux provider API may have moved again.`,
+    );
+  }
+  cachedFauxModule = merged as unknown as FauxModuleShape;
   return cachedFauxModule;
 }
 
