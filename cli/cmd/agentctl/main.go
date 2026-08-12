@@ -898,5 +898,32 @@ func resolveRuntimeCommand(runtimeType string) ([]string, error) {
 }
 
 func printEvent(w io.Writer, ev wire.Event) {
-	fmt.Fprintf(w, "[%s] %s\n", ev.Type, string(ev.Data))
+	fmt.Fprintf(w, "[%s] %s\n", ev.Type, string(withTimestamp(ev.Ts, ev.Data)))
+}
+
+// withTimestamp injects ts into the event's data object before printing.
+// wire.Event.Ts is populated on every event, but printEvent used to print
+// only ev.Type and ev.Data, silently dropping it — so downstream consumers
+// of agentctl's stdout (e.g. assay) had no way to compute tool-call
+// duration even though the timestamp existed all along. Merging ts into
+// the printed data object fixes that without introducing a new line
+// format: existing `[type] {json}` consumers keep working, they just see
+// one more key in the object. Falls back to the untouched data if it
+// isn't a JSON object (should not happen in practice — every wire event's
+// data is an object, per cli/internal/wire/events_test.go).
+func withTimestamp(ts time.Time, data json.RawMessage) json.RawMessage {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return data
+	}
+	tsJSON, err := json.Marshal(ts)
+	if err != nil {
+		return data
+	}
+	fields["ts"] = tsJSON
+	merged, err := json.Marshal(fields)
+	if err != nil {
+		return data
+	}
+	return merged
 }
