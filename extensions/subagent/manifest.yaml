@@ -4,7 +4,10 @@ metadata:
   name: subagent
   version: 0.1.0
   owner: agent-controller
-  description: Delegate tasks to specialized subagents with isolated context windows
+  description: >-
+    Delegate tasks to specialized subagents with isolated context windows.
+    Shim over Pi's bundled subagent example, restricted to the agents
+    declared in spec.subagents[].
 spec:
   entrypoint: ./entrypoint.ts
   riskLevel: high

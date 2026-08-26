@@ -20,7 +20,7 @@ flowchart TB
         ingest --> adapt --> emitter
     end
 
-    pi[["Pi<br/>@earendil-works/pi-coding-agent<br/>pi-agent-core · pi-ai<br/>pi-mcp-extension · vendored subagent ext"]]:::external
+    pi[["Pi<br/>@earendil-works/pi-coding-agent<br/>pi-agent-core · pi-ai<br/>pi-mcp-extension · bundled subagent ext"]]:::external
 
     subgraph reg["Manifest registry"]
         direction LR
@@ -202,7 +202,7 @@ flowchart LR
         childpi -. "reads" .-> models2["models.json<br/>(via PI_CODING_AGENT_DIR)"]
     end
 
-    parent -. "spawns via subagent extension<br/>with PI_CODING_AGENT_DIR" .-> subagent
+    parent -. "spawns via subagent extension<br/>inheriting PI_CODING_AGENT_DIR" .-> subagent
 
     gateway[["Anthropic-compatible<br/>gateway / proxy<br/>(e.g. local dev gateway,<br/>corporate LLM proxy)"]]
     anthropic[["api.anthropic.com<br/>(direct fallback when<br/>ANTHROPIC_BASE_URL unset)"]]
@@ -221,7 +221,7 @@ Pi's anthropic provider always passes `baseURL: model.baseUrl` explicitly to the
 
 1. **In-process for the parent session.** After `getModel("anthropic", name)` returns, the adapter sets `model.baseUrl = process.env.ANTHROPIC_BASE_URL` (see `adapter.ts` near the `getModel` call). This is the simplest path — the parent's HTTP requests now target the gateway.
 
-2. **On disk for subagents.** When the subagent extension spawns a child `pi` process, the child re-reads its model registry from scratch and re-applies Pi's defaults — losing the in-process override. To force the child onto the same gateway, `writeSubagentModelsJson(cwd)` drops a project-local `models.json` under `<cwd>/.pi/agent/` containing `{ providers: { anthropic: { baseUrl: <override> } } }`, plus an empty `auth.json` so the child doesn't choke on a missing file. The adapter then sets `PI_CODING_AGENT_DIR=<cwd>/.pi/agent` in the child's environment so Pi reads the project-local config instead of the global `~/.pi/agent/`.
+2. **On disk for subagents.** When the subagent extension spawns a child `pi` process, the child re-reads its model registry from scratch and re-applies Pi's defaults — losing the in-process override. To force the child onto the same gateway, `writeSubagentModelsJson(cwd)` drops a project-local `models.json` under `<cwd>/.pi/agent/` containing `{ providers: { anthropic: { baseUrl: <override> } } }`, plus an empty `auth.json` so the child doesn't choke on a missing file. The adapter passes that directory to the subagent shim as `AC_SUBAGENT_AGENT_DIR`; because Pi's bundled extension spawns children without an `env` override, the shim sets `PI_CODING_AGENT_DIR=<cwd>/.pi/agent` on the adapter process for the duration of each tool call and the children inherit it, so Pi reads the project-local config instead of the global `~/.pi/agent/`. Scoping it to the call keeps the parent session's own config dir untouched; the override is reference-counted so overlapping calls can't restore it out from under each other.
 
 ### When the override is in play
 
@@ -229,7 +229,7 @@ Pi's anthropic provider always passes `baseURL: model.baseUrl` explicitly to the
 
 - **No override** (`ANTHROPIC_BASE_URL` unset): runtime talks to `api.anthropic.com` directly via Pi's default model registry. No gateway-override files are written. Subagents inherit the same default.
 - **Override set, parent only** (no subagents): in-process baseURL mutation is sufficient. The adapter does **not** write `models.json` in this case — `writeSubagentModelsJson()` is only called on the subagent code path.
-- **Override set + subagents declared**: both paths active. The adapter writes `<cwd>/.pi/agent/models.json` + an empty `auth.json` and sets `PI_CODING_AGENT_DIR` on every spawned child so children pick up the override.
+- **Override set + subagents declared**: both paths active. The adapter writes `<cwd>/.pi/agent/models.json` + an empty `auth.json`, and the subagent shim exports `PI_CODING_AGENT_DIR` for the duration of each subagent call so every spawned child inherits it and picks up the override.
 
 ### Failure modes
 

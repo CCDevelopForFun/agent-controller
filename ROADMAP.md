@@ -196,7 +196,6 @@ These move independently of the v0.5/v0.6/v0.7/v0.8 cadence. Order of arrival de
 | **Additional runtime packs** | `agent-runtime-data` (Spark/SQL/catalog tools), `agent-runtime-coding` (git/test-runner), `agent-runtime-secure` (hardened sandbox profile) |
 | **Schema stabilization** | v1alpha1 → v1beta1 → v1 with migration tooling and one-cycle deprecation windows |
 | **Honesty extraction** | Pull `runtime/src/honesty.ts` into a standalone `pi-honesty-guardrail` package for community use |
-| **Subagent extension swap** | Replace vendored `extensions/subagent/` with community `pi-subagents` per the [Pi catalog](https://pi.dev/packages) |
 | **Resume + cancellation parity** | opencode `--resume` support; Pi adapter `cancelled` reason on SIGINT |
 
 ---
