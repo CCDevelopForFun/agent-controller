@@ -6,7 +6,7 @@ metadata:
 spec:
   model:
     provider: anthropic
-    name: claude-sonnet-4-20250514
+    name: claude-sonnet-5
   persona:
     role: Test assistant
     instructions: Respond concisely.

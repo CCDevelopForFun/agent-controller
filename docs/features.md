@@ -189,7 +189,7 @@ apiVersion: agent-controller.dev/v1alpha1
 kind: Agent
 metadata: { name: bad }
 spec:
-  model: { provider: anthropic, name: claude-sonnet-4-20250514 }
+  model: { provider: anthropic, name: claude-sonnet-5 }
   task: hi
   tools:
     - name: bash
@@ -213,7 +213,7 @@ apiVersion: agent-controller.dev/v1alpha1
 kind: Agent
 metadata: { name: bad-opencode }
 spec:
-  model: { provider: anthropic, name: claude-sonnet-4-20250514 }
+  model: { provider: anthropic, name: claude-sonnet-5 }
   task: hi
   tools:
     - name: get_time         # custom Pi-extension tool — opencode rejects
@@ -261,7 +261,7 @@ apiVersion: agent-controller.dev/v1alpha1
 kind: Agent
 metadata: { name: bad-opencode-ext }
 spec:
-  model: { provider: anthropic, name: claude-sonnet-4-20250514 }
+  model: { provider: anthropic, name: claude-sonnet-5 }
   task: hi
   tools: []
   extensions:
@@ -376,7 +376,7 @@ apiVersion: agent-controller.dev/v1alpha1
 kind: Agent
 metadata: { name: needs-stuff }
 spec:
-  model: { provider: anthropic, name: claude-sonnet-4-20250514 }
+  model: { provider: anthropic, name: claude-sonnet-5 }
   task: hi
   tools: []
   runtime:
@@ -443,7 +443,7 @@ apiVersion: agent-controller.dev/v1alpha1
 kind: Agent
 metadata: { name: needs-stuff }
 spec:
-  model: { provider: anthropic, name: claude-sonnet-4-20250514 }
+  model: { provider: anthropic, name: claude-sonnet-5 }
   task: hi
   tools: []
   runtime:

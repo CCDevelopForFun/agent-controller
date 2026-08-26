@@ -23,7 +23,7 @@ apiVersion: agent-controller.dev/v1alpha1
 kind: Agent
 metadata: { name: hello }
 spec:
-  model: { provider: anthropic, name: claude-sonnet-4-20250514 }
+  model: { provider: anthropic, name: claude-sonnet-5 }
   persona: { role: Helpful demo, instructions: Answer concisely. }
   task: Say hello.
   tools: []

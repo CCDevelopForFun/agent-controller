@@ -286,7 +286,7 @@ function fixture(): CompiledSpec {
   return {
     v: 1,
     metadata: { name: "hello" },
-    model: { provider: "anthropic", name: "claude-sonnet-4-20250514" },
+    model: { provider: "anthropic", name: "claude-sonnet-5" },
     task: "Tell me the time",
     tools: [{ name: "get_time", entrypoint: "/abs/tools/get_time/entrypoint.ts" }],
     extensions: [{ name: "audit-log", entrypoint: "/abs/extensions/audit-log/entrypoint.ts", config: { path: "./audit.log" } }],
@@ -737,7 +737,7 @@ describe("adapter", () => {
     const ended = runSession(fixture(), () => {});
     await flushAndShutdown();
     await ended;
-    expect(captured.modelGetCalls).toEqual([["anthropic", "claude-sonnet-4-20250514"]]);
+    expect(captured.modelGetCalls).toEqual([["anthropic", "claude-sonnet-5"]]);
     // Use objectContaining so the assertion is stable whether or not
     // ANTHROPIC_BASE_URL is set (the adapter may add a baseUrl field to the
     // model object when the env var is present).
@@ -944,7 +944,7 @@ describe("adapter", () => {
   // breaking tool calling).
   it("installs an onPayload hook that injects temperature when spec.model.temperature is set and thinking is off", async () => {
     const spec = fixture();
-    spec.model = { provider: "anthropic", name: "claude-sonnet-4-20250514", temperature: 0.3 };
+    spec.model = { provider: "anthropic", name: "claude-sonnet-5", temperature: 0.3 };
     const ended = runSession(spec, () => {});
     await flushAndShutdown();
     await ended;
@@ -1001,7 +1001,7 @@ describe("adapter", () => {
 
   it("does NOT inject temperature when payload already has thinking enabled", async () => {
     const spec = fixture();
-    spec.model = { provider: "anthropic", name: "claude-sonnet-4-20250514", temperature: 0.3 };
+    spec.model = { provider: "anthropic", name: "claude-sonnet-5", temperature: 0.3 };
     const ended = runSession(spec, () => {});
     await flushAndShutdown();
     await ended;
