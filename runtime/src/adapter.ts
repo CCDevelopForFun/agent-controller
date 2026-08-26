@@ -16,7 +16,10 @@ import {
   stripHallucinationXml,
   wrapSkillBody,
 } from "./honesty.js";
-import { resolveFakeModelIfRequested } from "./testing/fake-provider.js";
+import {
+  resolveFakeModelIfRequested,
+  resolveFakeModelRuntimeIfRequested,
+} from "./testing/fake-provider.js";
 import {
   EVENTS_API_VERSION_V1ALPHA1,
   initAdapterTracing,
@@ -911,8 +914,17 @@ export async function runSession(
     ...spec.tools.map((t) => t.name),
     ...(spec.subagents && spec.subagents.length > 0 ? ["subagent"] : []),
   ];
+  // When the fake provider is active, hand pi a ModelRuntime whose catalog
+  // resolves the model's provider to the scripted faux. Overriding the model
+  // alone is not enough: ModelRuntime.prepareRequest() resolves the streaming
+  // provider by `model.provider`, so without this the "hermetic" test reaches
+  // the real Anthropic endpoint. Undefined in production, where the option is
+  // omitted and pi builds its default runtime.
+  const fakeModelRuntime = await resolveFakeModelRuntimeIfRequested();
+
   const { session } = await createAgentSession({
     model,
+    ...(fakeModelRuntime ? { modelRuntime: fakeModelRuntime } : {}),
     resourceLoader,
     // When MCP servers are declared: omit `tools` so allowedToolNames stays
     // undefined (MCP tools can enter the registry and auto-activate), and use
