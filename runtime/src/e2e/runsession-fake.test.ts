@@ -85,7 +85,7 @@ function minimalSpec(task: string): CompiledSpec {
   return {
     v: 1,
     metadata: { name: "e2e-fake" },
-    model: { provider: "anthropic", name: "claude-sonnet-4-20250514" },
+    model: { provider: "anthropic", name: "claude-sonnet-5" },
     task,
     tools: [],
     extensions: [],
