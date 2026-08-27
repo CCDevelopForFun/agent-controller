@@ -6,6 +6,37 @@ This project adheres to [Semantic Versioning](https://semver.org/) for the umbre
 
 ## [Unreleased]
 
+### Fixed — the fake-provider E2E suite was making real network calls
+
+The three tests in `runtime/src/e2e/runsession-fake.test.ts` had been failing
+since the pi `0.82.1` bump (1be203c), each timing out at 5s.
+
+**Root cause:** pi 0.82.x moved provider dispatch from the api-registry to the
+provider *catalog*. `ModelRuntime.prepareRequest()` resolves the streaming
+provider with `this.models.getProvider(model.provider)` — it never consults the
+`model.api` -> `getApiProvider()` registry that `registerFauxProvider()` writes
+to. Instrumenting both layers showed `fake-test` being registered and then
+never looked up, while pi resolved `anthropic` from the catalog instead.
+
+Because the faux model claims `provider: "anthropic"` (so the adapter's
+`ANTHROPIC_*` handling stays a no-op), the catalog handed back the **real**
+Anthropic provider. The "hermetic" suite was making live HTTP calls, retrying
+four times, and blowing the 5s budget — the timeouts were network waits, not a
+deadlock.
+
+**Fix:** register the faux as a catalog provider too. `fauxProvider()` returns
+the same scripted core wrapped as a `Provider`; the new
+`resolveFakeModelRuntimeIfRequested()` builds a `ModelRuntime` (with
+`modelsPath: null`, so it touches no real config) and calls
+`registerNativeProvider()` to shadow `anthropic` for that instance only. The
+adapter passes it as `createAgentSession({ modelRuntime })` — the seam pi
+actually consults. Production is unchanged: with no fake installed the helper
+returns undefined and the option is omitted entirely.
+
+The suite is now genuinely hermetic — **105/105 passing, and the runtime drops
+from ~16s to ~1.2s** because the retry waits are gone.
+
+
 ### Added — claude adapter (`runtime.type: local-claude`)
 
 Fourth runtime adapter for Agent Controller. Drives sessions through `@anthropic-ai/claude-agent-sdk` (pinned to `0.3.220`), making it the only adapter that needs no external CLI on `PATH`.

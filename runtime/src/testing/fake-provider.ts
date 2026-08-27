@@ -64,6 +64,11 @@ import type { Model, Api, TextContent, ThinkingContent, ToolCall, AssistantMessa
 
 type FauxModuleShape = {
   registerFauxProvider: (opts?: RegisterFauxProviderOptions) => FauxProviderRegistration;
+  // pi 0.82.x dispatches through the provider CATALOG, not the api-registry
+  // registerFauxProvider writes to. fauxProvider() returns a catalog-shaped
+  // provider for that path. See installFakeProvider().
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  fauxProvider: (opts?: RegisterFauxProviderOptions) => any;
   fauxText: (text: string) => TextContent;
   fauxThinking: (thinking: string) => ThinkingContent;
   fauxToolCall: (
@@ -177,6 +182,13 @@ export type { FauxResponseStep };
  * undefined ⇒ no fake installed; the adapter behaves normally.
  */
 let activeFake: FauxProviderRegistration | undefined;
+/**
+ * The catalog-shaped faux (pi >= 0.82). Held alongside `activeFake` because the
+ * two mechanisms are separate: the api-registry entry and the provider catalog
+ * entry. `activeFake` stays the public handle (setResponses/state/callCount).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let activeCatalogFaux: any | undefined;
 
 /** Sentinel api id the fake provider registers under. */
 export const FAKE_API = "fake-test";
@@ -199,8 +211,8 @@ export async function installFakeProvider(
       "Call clearFakeProvider() in your test's afterEach before reinstalling.",
     );
   }
-  const { registerFauxProvider } = await loadFauxModule();
-  const reg = registerFauxProvider({
+  const { registerFauxProvider, fauxProvider } = await loadFauxModule();
+  const opts = {
     api: FAKE_API,
     // Pretend to be the anthropic provider so the adapter's
     // ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL logic is a no-op for the
@@ -208,9 +220,27 @@ export async function installFakeProvider(
     // override the model's api.
     provider: "anthropic",
     models: [{ id: "fake-model", name: "fake-model" }],
-  });
+  };
+  const reg = registerFauxProvider(opts);
   reg.setResponses(responses);
   activeFake = reg;
+
+  // pi 0.82.x resolves the streaming provider by `model.provider` through
+  // ModelRuntime's provider catalog (model-runtime.ts `prepareRequest`:
+  // `this.models.getProvider(model.provider)`), NOT by `model.api` through the
+  // api-registry that registerFauxProvider writes to. So the api-registry
+  // entry above is invisible to the agent loop, and because the faux model
+  // claims `provider: "anthropic"`, the catalog hands back the REAL Anthropic
+  // provider and the "hermetic" test makes a live HTTP call.
+  //
+  // fauxProvider() returns the same scripted core wrapped as a catalog
+  // provider. We keep it here so the adapter can register it onto a
+  // ModelRuntime, which is the seam pi actually consults.
+  if (typeof fauxProvider === "function") {
+    const catalog = fauxProvider(opts);
+    catalog.setResponses(responses);
+    activeCatalogFaux = catalog;
+  }
   return reg;
 }
 
@@ -223,6 +253,7 @@ export function clearFakeProvider(): void {
     activeFake.unregister();
     activeFake = undefined;
   }
+  activeCatalogFaux = undefined;
 }
 
 /** Returns the currently-active faux registration, or undefined. */
@@ -240,6 +271,37 @@ export function getActiveFakeProvider(): FauxProviderRegistration | undefined {
  * means production code paths can never accidentally activate the fake
  * — the env var alone does nothing without a script.
  */
+/**
+ * Adapter hook: when the fake is active, build a ModelRuntime whose provider
+ * catalog resolves `anthropic` to the scripted faux provider, and hand it to
+ * `createAgentSession({ modelRuntime })`.
+ *
+ * This is the seam that actually governs dispatch in pi >= 0.82:
+ * `ModelRuntime.prepareRequest()` looks the provider up by `model.provider`,
+ * so overriding the model's `api` alone does nothing. `registerNativeProvider`
+ * shadows the builtin `anthropic` entry for this runtime instance only.
+ *
+ * `modelsPath: null` keeps the runtime off the user's `~/.pi/agent/models.json`
+ * and off any project models-store file — the fake must not read or write real
+ * config.
+ *
+ * Returns undefined when no fake is installed, so production paths keep using
+ * pi's default runtime.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function resolveFakeModelRuntimeIfRequested(): Promise<any | undefined> {
+  if (process.env.AGENT_CONTROLLER_USE_FAKE_PROVIDER !== "1") return undefined;
+  if (!activeCatalogFaux) return undefined;
+
+  const { ModelRuntime } = (await import("@earendil-works/pi-coding-agent")) as unknown as {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ModelRuntime: { create: (opts?: Record<string, unknown>) => Promise<any> };
+  };
+  const runtime = await ModelRuntime.create({ modelsPath: null });
+  runtime.registerNativeProvider(activeCatalogFaux.provider);
+  return runtime;
+}
+
 export function resolveFakeModelIfRequested(): Model<Api> | undefined {
   if (process.env.AGENT_CONTROLLER_USE_FAKE_PROVIDER !== "1") return undefined;
   if (!activeFake) {
