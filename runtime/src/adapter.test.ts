@@ -280,6 +280,8 @@ beforeEach(() => {
   // Clear env overrides that affect source resolution.
   delete process.env.AGENT_CONTROLLER_NO_AUTO_INSTALL;
   delete process.env.PI_BIN;
+  // Set only when subagents are declared; a leak would mask a regression.
+  delete process.env.AC_UPSTREAM_SUBAGENT_PATH;
 });
 
 function fixture(): CompiledSpec {
@@ -1217,7 +1219,7 @@ describe("adapter", () => {
     expect(agentCopy![0]).toBe("/abs/agents/sql-explorer.md");
   });
 
-  it("appends the vendored subagent extension entrypoint to additionalExtensionPaths when subagents declared", async () => {
+  it("appends the subagent shim entrypoint to additionalExtensionPaths when subagents declared", async () => {
     fakeFs.files.set("/abs/agents/sql-explorer.md", "---\nname: sql-explorer\n---\nBody");
 
     const ended = runSession(subagentFixture(), () => {});
@@ -1225,8 +1227,24 @@ describe("adapter", () => {
     await ended;
 
     const paths: string[] = captured.resourceLoaderArgs.additionalExtensionPaths;
-    // The vendored extension path should end with extensions/subagent/entrypoint.ts.
+    // Our shim's path — it wraps Pi's bundled example rather than vendoring it.
     expect(paths.some((p) => p.endsWith("extensions/subagent/entrypoint.ts"))).toBe(true);
+  });
+
+  it("points AC_UPSTREAM_SUBAGENT_PATH at Pi's bundled subagent example", async () => {
+    fakeFs.files.set("/abs/agents/sql-explorer.md", "---\nname: sql-explorer\n---\nBody");
+
+    const ended = runSession(subagentFixture(), () => {});
+    await flushAndShutdown();
+    await ended;
+
+    // The shim reads this inside its default export, which runs during session
+    // construction — so it must be set before the resource loader is built.
+    // subagent-upstream.test.ts covers that the real path loads; here we only
+    // assert the adapter sets it (node:url is mocked, so the prefix is fake).
+    expect(process.env.AC_UPSTREAM_SUBAGENT_PATH).toMatch(
+      /examples[/\\]extensions[/\\]subagent[/\\]index\.ts$/,
+    );
   });
 
   it("adds 'subagent' to the tool allowlist when subagents are declared", async () => {
@@ -1250,6 +1268,8 @@ describe("adapter", () => {
 
     expect(fakeFs.copies).toHaveLength(0);
     expect(captured.createAgentArgs.tools).not.toContain("subagent");
+    // The shim is never loaded, so its upstream path must stay unset.
+    expect(process.env.AC_UPSTREAM_SUBAGENT_PATH).toBeUndefined();
   });
 
   it("skips copy (idempotent) when .pi/agents/ file already has identical content", async () => {

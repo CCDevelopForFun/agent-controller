@@ -303,7 +303,7 @@ ls agents/
 # expected: [{"name": "sql-explorer", "entrypoint": "<abs>/agents/sql-explorer.md"}]
 ```
 
-Pi adapter: spawns child `pi` processes via the vendored subagent extension. Opencode adapter: registers each subagent as `cfg.agent[name]` with `mode: "subagent"`.
+Pi adapter: spawns child `pi` processes via Pi's own bundled subagent extension, loaded in place from `@earendil-works/pi-coding-agent`'s `examples/` and wrapped by the thin shim in `extensions/subagent/` that pins delegation to the declared allowlist. Opencode adapter: registers each subagent as `cfg.agent[name]` with `mode: "subagent"`.
 
 ### 2.8 `spec.mcpServers[]` — MCP server registration
 
@@ -492,7 +492,7 @@ The full per-feature table lives in [`docs/architecture/harness-matrix.md`](arch
 | Session resume (`--resume`) | ✅ | ❌ rejected by `agentctl run` |
 | `audit-log` extension | ✅ | ❌ not implemented |
 | Skills inlined into prompt | ✅ | ✅ |
-| Subagent delegation | ✅ via vendored ext | ✅ via opencode native |
+| Subagent delegation | ✅ via Pi's bundled ext (shimmed) | ✅ via opencode native |
 | MCP servers | ✅ via `pi-mcp-extension` | ✅ via opencode native `cfg.mcp` |
 | Hallucination guardrails | ✅ | ✅ |
 | `session.ended { reason: "cancelled" }` on SIGINT | ❌ surfaces as `error` | ✅ |

@@ -36,6 +36,61 @@ returns undefined and the option is omitted entirely.
 The suite is now genuinely hermetic — **105/105 passing, and the runtime drops
 from ~16s to ~1.2s** because the retry waits are gone.
 
+### Changed — Pi subagent extension is now Pi's own, loaded in place
+
+`extensions/subagent/` carried a ~600-line vendored fork of Pi's bundled
+subagent example (`@earendil-works/pi-coding-agent/examples/extensions/subagent/`),
+which drifted from upstream on every pi bump. Pi ships `examples/` in the
+package's npm `files`, and its extension loader aliases `@earendil-works/*` and
+`typebox` to its own installs, so the example can be loaded straight out of
+`node_modules` — with its own `pi-tui` / `pi-agent-core` imports resolving, which
+is why the fork had to strip them in the first place.
+
+- **`extensions/subagent/entrypoint.ts` is now a ~150-line shim** that dynamically
+  imports upstream's example and overrides only what conflicts with
+  agent-controller's model. `extensions/subagent/agents.ts` is deleted —
+  upstream's own copy is used.
+- **The ADL allowlist is unchanged and still enforced.** Upstream defaults
+  `agentScope` to `"user"` and lets the model choose it, which reaches
+  `~/.pi/agent/agents/*.md` — agents no spec declared. The shim forces
+  `"project"`, so only `spec.subagents[]` materialized into `<cwd>/.pi/agents/`
+  is reachable. It also forces `confirmProjectAgents: false` (the spec is the
+  approval) and replaces upstream's model-visible description, which embeds
+  `getAgentDir()` and instructs the model to set `agentScope: "both"`.
+- **Two process-global overrides are applied for the duration of a call:**
+  `process.argv[1]` → the resolved pi CLI (upstream's
+  `getPiInvocation` spawns `node process.argv[1]`, which under agent-controller
+  is the adapter itself, so every child would hang waiting for a CompiledSpec on
+  stdin), and `PI_CODING_AGENT_DIR` → the local agent dir holding the
+  `ANTHROPIC_BASE_URL` gateway `models.json` (upstream spawns with no `env`
+  override, so children inherit ours). Scoping them to the call keeps the parent
+  session's own `getAgentDir()` — `auth.json`, `settings.json`, sessions —
+  pointing at the user's real `~/.pi`. The overrides are **reference-counted**
+  because Pi executes a batch of tool calls concurrently by default: naive
+  per-call save/restore let a second overlapping call capture the first call's
+  already-mutated `argv[1]` as the "original", and let the first call's restore
+  repoint `argv[1]` at the adapter while the second was still spawning children,
+  hanging them. First call in applies, last call out restores.
+- **`runtime/src/adapter.ts`** gains `resolveUpstreamSubagentPath()` and sets
+  `AC_UPSTREAM_SUBAGENT_PATH` before the resource loader is built.
+  `createRequire().resolve()` cannot reach the package (its `exports` map
+  declares only `.` and `./hooks` under an `import` condition), so this uses
+  `import.meta.resolve` with a conventional-layout fallback.
+- **New `runtime/src/subagent-upstream.test.ts`** — six canary tests that mock
+  nothing and load the real shim through Pi's own `discoverAndLoadExtensions`.
+  `examples/` is not a stable API surface, so these fail at `npm test` rather
+  than at a user's session start if pi moves or reshapes the example. The
+  documented fallback is re-vendoring the fork.
+- **`copy-vendored-extensions.mjs`** now clears the destination before copying;
+  `cpSync` merges, so a file deleted from the source (like `agents.ts`) would
+  otherwise linger in `dist/` across incremental builds and get published.
+
+Retires the "Subagent extension swap" item from `ROADMAP.md`. The catalog was
+surveyed first per the catalog-first convention: there is no first-party Pi
+subagent package (`pi-subagents` and `@tintinweb/pi-subagents` are both
+third-party and unbadged), and the catalog entry `pi-subagents` ships builtin
+agents (`scout`, `reviewer`, `oracle`, …) that would need explicit lockdown to
+not widen the allowlist. Pi's own bundled example is the first-party option.
 
 ### Added — claude adapter (`runtime.type: local-claude`)
 

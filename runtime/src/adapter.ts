@@ -217,6 +217,40 @@ function writeAgentFiles(cwd: string, subagents: Array<{ name: string; entrypoin
 }
 
 /**
+ * Resolve Pi's own bundled subagent extension —
+ * `<pi-coding-agent>/examples/extensions/subagent/index.ts`.
+ *
+ * Pi ships `examples/` in the package's npm `files`, so this path exists in a
+ * plain `npm install` and is versioned with the pinned pi release. Loading it
+ * in place is why `extensions/subagent/entrypoint.ts` can be a ~150-line shim
+ * instead of a vendored fork that drifts every time pi cuts a version.
+ *
+ * `createRequire().resolve()` cannot be used here: the package's `exports` map
+ * declares only "." and "./hooks" under an `import` condition, so both the deep
+ * path and the bare specifier fail to resolve under CJS conditions. The ESM
+ * `import.meta.resolve` honors the `import` condition and returns dist/index.js,
+ * whose grandparent is the package root. Falling back to the conventional
+ * node_modules layout keeps this working when `import.meta.resolve` is
+ * unavailable (notably under the mocked `node:url` in adapter.test.ts).
+ *
+ * Not existence-checked here — the caller decides how to report a miss, and
+ * `subagent-upstream.test.ts` asserts the resolved path really loads.
+ */
+export function resolveUpstreamSubagentPath(): string {
+  const exampleRelPath = join("examples", "extensions", "subagent", "index.ts");
+
+  try {
+    const piIndex = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"));
+    // piIndex = <pkg>/dist/index.js → <pkg>
+    return join(dirname(dirname(piIndex)), exampleRelPath);
+  } catch {
+    // Conventional layout, anchored on this file (runtime/dist/adapter.js).
+    const here = dirname(fileURLToPath(import.meta.url));
+    return join(here, "..", "node_modules", "@earendil-works", "pi-coding-agent", exampleRelPath);
+  }
+}
+
+/**
  * Write <cwd>/.pi/agent/models.json so that child `pi` processes spawned by
  * the subagent extension route through the same Anthropic gateway as the
  * parent adapter session.
@@ -583,11 +617,14 @@ export async function runSession(
         .filter((t): t is typeof t & { entrypoint: string } => !t.builtin && Boolean(t.entrypoint));
       copyToolExtensionsToLocalAgentDir(agentDirForTools, resolvedTools);
     }
-    // Expose the `pi` CLI binary path via AC_PI_BIN so the vendored subagent
-    // extension can spawn the correct `pi` when `pi` is not on the system PATH.
+    // Expose the `pi` CLI binary path via AC_PI_BIN so the subagent shim can
+    // point upstream's spawn at the correct `pi` when `pi` is not on the system
+    // PATH. Upstream's getPiInvocation would otherwise run `node process.argv[1]`
+    // — under agent-controller that is this adapter, which expects a CompiledSpec
+    // on stdin, so every child would hang. See extensions/subagent/entrypoint.ts.
     // The package's exports map blocks deep-path _require.resolve, so we look
     // for the .bin/pi symlink relative to node_modules, then fall back to the
-    // known conventional path for our vendored package.
+    // known conventional dist/cli.js path.
     //
     // Strategy: walk up from our own file to find a node_modules/.bin/pi that
     // resolves to a real file, or construct the known path from the package we
@@ -615,16 +652,20 @@ export async function runSession(
         }
       }
     }
-    // Resolve the vendored subagent extension. Try the source-tree layout
-    // FIRST (../../extensions/subagent relative to runtime/dist) so a
-    // developer's edits to extensions/subagent/* take effect on the next
-    // run without rebuilding; only fall back to the in-package bundled
-    // copy (dist/extensions/subagent, populated by
-    // scripts/copy-vendored-extensions.mjs) when the source-tree path
-    // doesn't exist — which is the case for npm-installed adapters where
-    // only dist/ ships. Push the in-package path if neither exists; Pi
-    // surfaces a clear file-not-found at session start. Codex passes 3+4
-    // of slice 4.2 caught this.
+    // Tell the shim where Pi's bundled subagent example lives. It is read
+    // inside the shim's default export, which runs during session
+    // construction, so it must be set before the loader is built below.
+    process.env.AC_UPSTREAM_SUBAGENT_PATH = resolveUpstreamSubagentPath();
+
+    // Resolve our shim. Try the source-tree layout FIRST
+    // (../../extensions/subagent relative to runtime/dist) so a developer's
+    // edits to extensions/subagent/* take effect on the next run without
+    // rebuilding; only fall back to the in-package bundled copy
+    // (dist/extensions/subagent, populated by
+    // scripts/copy-vendored-extensions.mjs) when the source-tree path doesn't
+    // exist — which is the case for npm-installed adapters where only dist/
+    // ships. Push the in-package path if neither exists; Pi surfaces a clear
+    // file-not-found at session start. Codex passes 3+4 of slice 4.2 caught this.
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = dirname(__filename);
     const subagentSourceTree = resolve(
