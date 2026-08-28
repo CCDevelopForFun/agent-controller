@@ -1,0 +1,101 @@
+name: test
+
+# Runs the test suites on every PR and on pushes to main.
+#
+# The repo had no test CI until now, which is why the fake-provider E2E
+# regression (fixed in #11) survived the pi 0.82.1 bump unnoticed: the suite
+# was making live Anthropic calls and timing out, and nothing ran it.
+#
+# Everything here is hermetic — no API keys, no network calls to model
+# providers. e2e/run.sh is a no-op for the live tiers unless
+# AGENT_CONTROLLER_RUN_LIVE=1 is set, so the codex/claude tiers below only
+# exercise the compile-time and adapter-startup rejection paths.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+# A new push to a PR branch makes the in-flight run obsolete.
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: cli (go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          # Matches the `go` directive in cli/go.mod.
+          go-version: '1.25'
+          cache-dependency-path: cli/go.sum
+      - name: build
+        run: go -C cli build -o bin/agentctl ./cmd/agentctl
+      - name: test
+        # Includes the schema-sync test, which fails if the embedded copy of
+        # adl.v1alpha1.json has drifted from schemas/.
+        run: go -C cli test ./...
+
+  node:
+    name: ${{ matrix.adapter }}
+    runs-on: ubuntu-latest
+    strategy:
+      # One adapter failing shouldn't hide the state of the other three.
+      fail-fast: false
+      matrix:
+        adapter:
+          - runtime
+          - runtime-opencode
+          - runtime-codex
+          - runtime-claude
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # runtime/ has the strictest engines floor (>=22.19.0); the other
+          # three only need >=22. Use the strictest so one version covers all.
+          node-version: '22.19.0'
+          cache: npm
+          cache-dependency-path: ${{ matrix.adapter }}/package-lock.json
+      - name: install
+        # --ignore-scripts matches the documented setup in AGENTS.md.
+        run: npm --prefix ${{ matrix.adapter }} ci --ignore-scripts
+      - name: test
+        # Each adapter's `npm test` runs its own build first — a bare vitest
+        # run would test a stale or absent dist/.
+        run: npm --prefix ${{ matrix.adapter }} test
+
+  e2e:
+    name: e2e (${{ matrix.adapter }}, hermetic)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Only the tiers that run without credentials. The pi and opencode
+        # tiers need a live key (and opencode needs its CLI on PATH), so they
+        # stay manual — see AGENTS.md.
+        adapter: [codex, claude]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache-dependency-path: cli/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+      - name: install adapter deps
+        # e2e/run.sh runs `npm run build` but never `npm install`, so on a
+        # fresh checkout tsc would be missing. Install the one adapter this
+        # tier builds.
+        run: npm --prefix runtime-${{ matrix.adapter }} ci --ignore-scripts
+      - name: run
+        env:
+          ADAPTER: ${{ matrix.adapter }}
+        run: ./e2e/run.sh
