@@ -1,4 +1,4 @@
-import { createAgentSession, DefaultResourceLoader, SessionManager, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { getBuiltinModel } from "@earendil-works/pi-ai/providers/all";
 import { join, basename, resolve, dirname } from "node:path";
 import { mkdirSync, writeFileSync, existsSync, readFileSync, copyFileSync, realpathSync, readdirSync, unlinkSync } from "node:fs";
@@ -782,6 +782,14 @@ export async function runSession(
   // and <cwd>/.pi/skills/. Only ADL-declared skills (via additionalSkillPaths)
   // are loaded, keeping the environment hermetic and consistent with the ADL
   // allowlist principle used for extensions.
+  const hasMcpServers = spec.mcpServers && spec.mcpServers.length > 0;
+  const piBuiltinToolNames = ["read", "bash", "edit", "write"];
+  const enablesAllPiBuiltins = piBuiltinToolNames.every((name) =>
+    spec.tools.some((tool) => tool.builtin && tool.name === name),
+  );
+  const sessionSettingsManager = hasMcpServers && enablesAllPiBuiltins
+    ? SettingsManager.create(process.cwd(), getAgentDir())
+    : undefined;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const resourceLoader = new DefaultResourceLoader({
     cwd: process.cwd(),
@@ -806,6 +814,9 @@ export async function runSession(
   // it assumes the caller has already loaded it. Without this call no extensions
   // (get_time, audit-log) are active.
   await (resourceLoader as any).reload();
+  // reload() re-reads ambient settings, so apply the ADL-declared tool override
+  // afterwards to make the active built-ins deterministic for this session.
+  sessionSettingsManager?.applyOverrides({ defaultTools: piBuiltinToolNames });
 
   // Fail fast if any ADL-declared entrypoint failed to load. Pi records load
   // failures in extensionsResult.errors as { path, error } pairs but continues
@@ -950,7 +961,6 @@ export async function runSession(
   // (registered by the vendored subagent extension) in the parent's allowlist.
   // Without this, the parent model would not be able to call the subagent tool
   // even though the extension is loaded.
-  const hasMcpServers = spec.mcpServers && spec.mcpServers.length > 0;
   const toolAllowlist = [
     ...spec.tools.map((t) => t.name),
     ...(spec.subagents && spec.subagents.length > 0 ? ["subagent"] : []),
@@ -968,13 +978,15 @@ export async function runSession(
     ...(fakeModelRuntime ? { modelRuntime: fakeModelRuntime } : {}),
     resourceLoader,
     // When MCP servers are declared: omit `tools` so allowedToolNames stays
-    // undefined (MCP tools can enter the registry and auto-activate), and use
-    // noTools: "builtin" to suppress Pi's built-in read/bash/edit/write tools.
+    // undefined and MCP tools can enter the registry and auto-activate. Suppress
+    // Pi's built-ins unless the spec explicitly declares all four; Pi cannot
+    // combine a partial built-in allowlist with dynamically registered MCP tools.
     // When no MCP servers: pass tools: toolAllowlist as before (explicit
     // allowlist that blocks builtins and activates only declared tool names).
     ...(hasMcpServers
-      ? { noTools: "builtin" as const }
+      ? (enablesAllPiBuiltins ? {} : { noTools: "builtin" as const })
       : { tools: toolAllowlist }),
+    ...(sessionSettingsManager ? { settingsManager: sessionSettingsManager } : {}),
     sessionManager,
   });
 

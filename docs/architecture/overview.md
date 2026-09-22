@@ -117,7 +117,7 @@ flowchart LR
 | Pi-format extensions (audit-log, custom tools) | Pi adapter (`local` / `local-pi`) | Pi extension modules don't run inside opencode |
 | Session resume (`--resume`) | Pi adapter | opencode resume not yet wired |
 | `bash` allowlist via tool config | Pi adapter (v0.1.11+) | opencode rejects per-tool config |
-| MCP + built-in tools coexisting in the same spec | opencode adapter | Pi adapter currently deactivates built-ins when MCP is non-empty |
+| MCP + independently selectable built-in tools | opencode adapter | Pi supports MCP plus built-ins only when all four (`read`, `bash`, `edit`, `write`) are explicitly declared together |
 | Native opencode MCP / subagent support without Pi indirection | opencode adapter | Native cfg.mcp + cfg.agent[subagent] |
 | Cancellation event (`reason: cancelled`) on SIGINT | opencode adapter | Pi adapter currently surfaces SIGINT as `error` |
 
