@@ -30,9 +30,9 @@ import (
 const workspaceMCPServerName = "agentctl-workspace"
 
 // declaredBuiltinTools returns the names of Pi-builtin tools (bash, read,
-// edit, write) the spec declares. Used to warn that --workspace's injected
-// MCP server will cause the Pi adapter to suppress these (see the caveat
-// in newRunCmd). Returns nil when none are declared.
+// edit, write) the spec declares. Used to warn when --workspace's injected
+// MCP server meets a partial built-in selection. Returns nil when none are
+// declared.
 func declaredBuiltinTools(spec *adl.CompiledSpec) []string {
 	var builtins []string
 	for _, tr := range spec.Tools {
@@ -41,6 +41,19 @@ func declaredBuiltinTools(spec *adl.CompiledSpec) []string {
 		}
 	}
 	return builtins
+}
+
+func allPiBuiltinToolsDeclared(tools []string) bool {
+	declared := make(map[string]bool, len(tools))
+	for _, name := range tools {
+		declared[name] = true
+	}
+	for _, name := range []string{"read", "bash", "edit", "write"} {
+		if !declared[name] {
+			return false
+		}
+	}
+	return true
 }
 
 // injectWorkspaceMCPServer adds the workspace memory MCP server to

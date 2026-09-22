@@ -278,6 +278,21 @@ func TestDeclaredBuiltinTools(t *testing.T) {
 	}
 }
 
+func TestAllPiBuiltinToolsDeclared(t *testing.T) {
+	if allPiBuiltinToolsDeclared(nil) != false {
+		t.Fatal("nil input must not enable MCP coexistence")
+	}
+	if allPiBuiltinToolsDeclared([]string{}) != false {
+		t.Fatal("empty input must not enable MCP coexistence")
+	}
+	if allPiBuiltinToolsDeclared([]string{"read", "bash", "edit", "write"}) != true {
+		t.Fatal("all four Pi built-ins should enable MCP coexistence")
+	}
+	if allPiBuiltinToolsDeclared([]string{"read", "bash", "edit"}) != false {
+		t.Fatal("a partial Pi built-in list must retain the MCP warning")
+	}
+}
+
 // minimalClaudeAgentSpecWithBash declares a builtin tool under
 // runtime.type: local-claude, so declaredBuiltinTools(&spec) is non-empty
 // and the Pi-only "--workspace will drop your built-ins" warning would fire
@@ -326,7 +341,7 @@ func TestRunWorkspaceNoPiWarningForClaudeAdapter(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "claude runtime not found") {
 		t.Fatalf("expected a deterministic 'claude runtime not found' error, got: %v", err)
 	}
-	if strings.Contains(stderr.String(), "will lose its declared built-in tool") {
+	if strings.Contains(stderr.String(), "[warning] --workspace adds an MCP server, and the Pi adapter") {
 		t.Errorf("claude adapter must not get the Pi-only built-ins warning; stderr: %q", stderr.String())
 	}
 }

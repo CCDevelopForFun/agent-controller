@@ -827,7 +827,7 @@ ls /tmp/ws-demo            # .agentctl-workspace.db (+ notes.md if the agent jou
 sqlite3 /tmp/ws-demo/.agentctl-workspace.db 'SELECT key, value FROM kv;'
 ```
 
-The memory tools ride on `spec.mcpServers`, so the same workspace works on Pi and opencode. Hermetic negative checks: `--workspace` with a `kubernetes` binding errors (host-local DB); `--workspace ""` errors; on Pi, combining `--workspace` with declared built-in tools prints a warning (Pi suppresses built-ins when any MCP server is present).
+The memory tools ride on `spec.mcpServers`, so the same workspace works on Pi and opencode. Hermetic negative checks: `--workspace` with a `kubernetes` binding errors (host-local DB); `--workspace ""` errors. On Pi, built-ins remain disabled with MCP unless all four (`read`, `bash`, `edit`, `write`) are explicitly declared together.
 
 ### 10.6 Scheduler examples
 

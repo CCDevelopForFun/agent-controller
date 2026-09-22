@@ -189,6 +189,8 @@ const captured = {
   modelReturnUndefined: false,
   // Records calls to SessionManager static factories.
   sessionManagerCalls: [] as Array<{ method: string; args: any[] }>,
+  settingsManagerCreateArgs: [] as unknown[],
+  settingsOverrides: [] as Array<Record<string, unknown>>,
 };
 
 vi.mock("@earendil-works/pi-ai/providers/all", () => ({
@@ -244,11 +246,22 @@ vi.mock("@earendil-works/pi-coding-agent", () => {
     }
   }
 
+  class SettingsManager {
+    static create(...args: unknown[]) {
+      captured.settingsManagerCreateArgs = args;
+      return {
+        applyOverrides: (overrides: Record<string, unknown>) => {
+          captured.settingsOverrides.push(overrides);
+        },
+      };
+    }
+  }
+
   function getAgentDir() {
     return "/mock/agent/dir";
   }
 
-  return { createAgentSession, DefaultResourceLoader, SessionManager, getAgentDir };
+  return { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager, getAgentDir };
 });
 
 import { runSession } from "./adapter.js";
@@ -264,6 +277,8 @@ beforeEach(() => {
   loaderErrors.errors = [];
   captured.promptResolvers = [];
   captured.sessionManagerCalls = [];
+  captured.settingsManagerCreateArgs = [];
+  captured.settingsOverrides = [];
   // Reset fake filesystem state between tests.
   fakeFs.files.clear();
   fakeFs.dirs.clear();
@@ -802,6 +817,21 @@ describe("adapter", () => {
     expect(captured.createAgentArgs.noTools).toBeUndefined();
   });
 
+  it("does not create MCP coexistence settings without MCP servers", async () => {
+    const spec = fixture();
+    spec.tools = ["read", "bash", "edit", "write"].map((name) => ({
+      name,
+      builtin: true,
+    }));
+    const ended = runSession(spec, () => {});
+    await flushAndShutdown();
+    await ended;
+
+    expect(captured.createAgentArgs.tools).toEqual(["read", "bash", "edit", "write"]);
+    expect(captured.createAgentArgs.settingsManager).toBeUndefined();
+    expect(captured.settingsOverrides).toEqual([]);
+  });
+
   // MCP tool allowlist fix: when mcpServers is non-empty, passing tools: []
   // sets allowedToolNames to an empty Set in Pi, which blocks ALL tools from
   // _toolRegistry — including MCP tools registered post-session-start by
@@ -832,6 +862,46 @@ describe("adapter", () => {
 
     expect(captured.createAgentArgs.tools).toBeUndefined();
     expect(captured.createAgentArgs.noTools).toBe("builtin");
+  });
+
+  it("keeps Pi built-ins enabled when an MCP spec explicitly declares all four", async () => {
+    const spec = mcpFixture();
+    spec.tools = ["read", "bash", "edit", "write"].map((name) => ({
+      name,
+      builtin: true,
+    }));
+    const ended = runSession(spec, () => {});
+    await flushAndShutdown();
+    await ended;
+
+    expect(captured.createAgentArgs.tools).toBeUndefined();
+    expect(captured.createAgentArgs.noTools).toBeUndefined();
+    expect(captured.resourceLoaderArgs.settingsManager).toBeUndefined();
+    expect(captured.createAgentArgs.settingsManager).toBeDefined();
+    expect(captured.settingsManagerCreateArgs).toEqual([process.cwd(), "/mock/agent/dir"]);
+    expect(captured.settingsOverrides).toEqual([
+      { defaultTools: ["read", "bash", "edit", "write"] },
+    ]);
+  });
+
+  it("keeps custom tools active with all Pi built-ins and MCP", async () => {
+    const spec = mcpFixture();
+    spec.tools = [
+      ...["read", "bash", "edit", "write"].map((name) => ({ name, builtin: true })),
+      { name: "get_time", entrypoint: "/abs/tools/get_time/entrypoint.ts" },
+    ];
+    const ended = runSession(spec, () => {});
+    await flushAndShutdown();
+    await ended;
+
+    expect(captured.createAgentArgs.tools).toBeUndefined();
+    expect(captured.createAgentArgs.noTools).toBeUndefined();
+    expect(captured.resourceLoaderArgs.additionalExtensionPaths).toContain(
+      "/abs/tools/get_time/entrypoint.ts",
+    );
+    expect(captured.settingsOverrides).toEqual([
+      { defaultTools: ["read", "bash", "edit", "write"] },
+    ]);
   });
 
   // Finding 2: unknown model error

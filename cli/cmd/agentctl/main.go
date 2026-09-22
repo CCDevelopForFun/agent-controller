@@ -359,27 +359,20 @@ func newRunCmd() *cobra.Command {
 							"Use a shared volume + the file-handoff flags (--output-file / " +
 							"--input KEY=@<path>) for cross-step state under Kubernetes")
 				}
-				// Pi-adapter caveat (codex pass 1 of slice 7.5): the Pi
-				// adapter switches to `noTools: "builtin"` whenever ANY MCP
-				// server is present, which suppresses the built-in
-				// read/bash/edit/write tools — Pi's API can't keep declared
-				// built-ins AND allow unknown MCP tool names at the same
-				// time. So injecting the workspace server would silently
-				// drop a Pi agent's declared built-in tools. Warn rather
-				// than fail (the agent may not need those built-ins). The
-				// opencode and claude adapters grant each declared tool
-				// independently (claude via the SDK's `allowedTools`) and
-				// are unaffected.
+				// Pi can preserve its default built-ins alongside dynamically
+				// registered MCP tools only when all four are declared together.
+				// A partial built-in list is suppressed, so warn before injecting
+				// the workspace MCP server. Opencode and Claude can grant each
+				// declared tool independently and are unaffected.
 				isPiAdapter := spec.Runtime.Type != "local-opencode" && spec.Runtime.Type != "local-codex" && spec.Runtime.Type != "local-claude"
 				if isPiAdapter {
 					builtins := declaredBuiltinTools(&spec)
-					if len(builtins) > 0 {
+					if len(builtins) > 0 && !allPiBuiltinToolsDeclared(builtins) {
 						fmt.Fprintf(cmd.ErrOrStderr(),
 							"[warning] --workspace adds an MCP server, and the Pi adapter "+
-								"disables built-in tools when any MCP server is present, so this "+
-								"run will lose its declared built-in tool(s): %s. Use "+
-								"runtime.type: local-opencode (unaffected), or drop --workspace "+
-								"and hand off via files (--output-file / --input KEY=@<path>).\n",
+								"requires all four Pi built-ins together. This run will lose its "+
+								"partial built-in selection: %s. Declare read, bash, edit, and write "+
+								"together, use runtime.type: local-opencode, or drop --workspace.\n",
 							strings.Join(builtins, ", "))
 					}
 				}
